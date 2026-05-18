@@ -64,6 +64,9 @@ class DedupView(QWidget):
         self.folders: List[Path] = []
         self.groups: List[DupGroup] = []
         self.group_rows: list[DupGroupRow] = []
+        self._pending_groups: list = []
+        self._rendered_count: int = 0
+        self._more_btn = None
         self._worker: ScanWorker | None = None
         self._thread: QThread | None = None
         self._build_ui()
@@ -279,12 +282,21 @@ class DedupView(QWidget):
     # ------------------------------------------------------------------
     # Rendu resultats (DupGroupRow)
     # ------------------------------------------------------------------
+    PAGE_SIZE = 50  # Anti-crash : limite le nb de groupes rendus en RAM
+
     def _clear_results(self) -> None:
         for row in self.group_rows:
             self._results_layout.removeWidget(row)
             row.deleteLater()
         self.group_rows = []
+        # Retire aussi un eventuel bouton "Afficher plus"
+        if hasattr(self, "_more_btn") and self._more_btn is not None:
+            self._results_layout.removeWidget(self._more_btn)
+            self._more_btn.deleteLater()
+            self._more_btn = None
         self._empty_lbl.setVisible(True)
+        self._pending_groups: list = []
+        self._rendered_count = 0
 
     def _render_results(self, groups: list[DupGroup]) -> None:
         self._clear_results()
@@ -294,15 +306,39 @@ class DedupView(QWidget):
             self.groups_badge.setText("0 groupes")
             return
         self._empty_lbl.setVisible(False)
-        for i, g in enumerate(groups, start=1):
-            row = DupGroupRow(g, index=i)
-            row.selection_changed.connect(self._update_footer)
-            self.group_rows.append(row)
-            # Insert avant le stretch final
-            self._results_layout.insertWidget(self._results_layout.count() - 1, row)
+        self._pending_groups = list(groups)
+        self._rendered_count = 0
+        self._render_next_page()
         self.groups_badge.setText(f"{len(groups)} groupes")
         self._apply_filter()
         self._update_footer()
+
+    def _render_next_page(self) -> None:
+        """Rend les PAGE_SIZE prochains groupes pour eviter d'exploser la RAM
+        sur les gros scans (1000+ groupes)."""
+        # Retire le bouton "Afficher plus" eventuel
+        if hasattr(self, "_more_btn") and self._more_btn is not None:
+            self._results_layout.removeWidget(self._more_btn)
+            self._more_btn.deleteLater()
+            self._more_btn = None
+        # Rend les prochains groupes
+        end = min(self._rendered_count + self.PAGE_SIZE, len(self._pending_groups))
+        for i in range(self._rendered_count, end):
+            g = self._pending_groups[i]
+            row = DupGroupRow(g, index=i + 1)
+            row.selection_changed.connect(self._update_footer)
+            self.group_rows.append(row)
+            self._results_layout.insertWidget(self._results_layout.count() - 1, row)
+        self._rendered_count = end
+        # Si reste, ajoute un bouton "Afficher plus"
+        remaining = len(self._pending_groups) - self._rendered_count
+        if remaining > 0:
+            self._more_btn = QPushButton(f"Afficher {min(self.PAGE_SIZE, remaining)} de plus ({remaining} restants)")
+            self._more_btn.setProperty("role", "secondary")
+            self._more_btn.clicked.connect(self._render_next_page)
+            self._results_layout.insertWidget(self._results_layout.count() - 1, self._more_btn)
+        else:
+            self._more_btn = None
 
     # ------------------------------------------------------------------
     # Filtre

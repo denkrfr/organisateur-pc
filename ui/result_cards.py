@@ -688,10 +688,21 @@ class DupGroupRow(QFrame):
         main_row.addLayout(recap_box)
 
         # Chevron expand
+        # Bouton "Voir/Modifier la selection" : ouvre le dialog dedie
+        self.see_btn = QPushButton("Voir / Modifier")
+        self.see_btn.setStyleSheet(
+            f"background: {ACCENT}; color: white; padding: 6px 12px; "
+            f"border-radius: 4px; font-weight: 700;"
+        )
+        self.see_btn.setToolTip("Voir tous les fichiers du groupe et choisir individuellement")
+        self.see_btn.clicked.connect(self._open_selection_dialog)
+        main_row.addWidget(self.see_btn)
+
+        # Ancien chevron expand (raccourci power user, garde)
         self.expand_btn = QPushButton("v")
         self.expand_btn.setFixedSize(28, 28)
         self.expand_btn.setProperty("role", "secondary")
-        self.expand_btn.setToolTip("Voir tous les fichiers du groupe")
+        self.expand_btn.setToolTip("Voir les fichiers ici (mode rapide)")
         self.expand_btn.clicked.connect(self._toggle_expand)
         main_row.addWidget(self.expand_btn)
 
@@ -789,6 +800,16 @@ class DupGroupRow(QFrame):
     def _on_file_toggled(self, idx: int, checked: bool) -> None:
         self._file_checks[idx] = checked
         self.selection_changed.emit()
+
+    def _open_selection_dialog(self) -> None:
+        """Ouvre le dialog 'Voir / Modifier la selection' avec tous les fichiers + checkbox individuelle."""
+        from .dup_group_dialog import DupGroupContentsDialog
+        dlg = DupGroupContentsDialog(self.group, self._file_checks, self)
+        if dlg.exec() == 1:  # Accepted
+            self._file_checks = dlg.checked_indices
+            if self._expanded:
+                self._render_files(collapsed=False)
+            self.selection_changed.emit()
 
     # ------------------------------------------------------------------
     # API publique pour la vue parente

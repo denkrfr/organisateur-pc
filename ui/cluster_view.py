@@ -347,6 +347,17 @@ class ClusterCard(QFrame):
         preview.setMaximumHeight(16)
         outer.addWidget(preview)
 
+        # Bouton textuel evident pour ouvrir le dialog avec checkboxes individuelles
+        if cluster.size > 1:
+            see_full_btn = QPushButton(f"Voir / Modifier la selection ({cluster.size} fichiers)")
+            see_full_btn.setStyleSheet(
+                f"background: {ACCENT}; color: white; padding: 8px 14px; "
+                f"border-radius: 5px; font-weight: 700; font-size: 12px;"
+            )
+            see_full_btn.setToolTip("Voir tous les fichiers + cocher/decocher individuellement")
+            see_full_btn.clicked.connect(self._open_contents_dialog)
+            outer.addWidget(see_full_btn)
+
         # Input + bouton
         action = QHBoxLayout()
         action.addWidget(QLabel("Nom du dossier :"))
@@ -464,6 +475,10 @@ class ClusterView(QWidget):
         self.cards: list[ClusterCard] = []
         self.sources: list[Path] = []  # fichiers ET dossiers (l'user ajoute ce qu'il veut)
         self._dest_root: Optional[Path] = None
+        self._pending_clusters: list = []
+        self._rendered_count: int = 0
+        self._known_folders_cache: list[str] = []
+        self._more_btn_clusters = None
         self._worker: ClusterWorker | None = None
         self._thread: QThread | None = None
         self._move_worker: MoveClusterWorker | None = None
@@ -753,6 +768,8 @@ class ClusterView(QWidget):
         self.progress.setValue(min(c, t))
         self.progress_label.setText(label)
 
+    PAGE_SIZE = 30  # Anti-crash : limite le nb de cartes rendues en RAM
+
     def _on_clustering_done(self, clusters: list) -> None:
         self.progress.setVisible(False)
         self.analyze_btn.setEnabled(True)
@@ -762,20 +779,41 @@ class ClusterView(QWidget):
             self.footer.setText("0 groupe")
             return
         known = [f for f, _ in sort.load_known_folders()]
-        # Inclus aussi les dossiers ayant des exemplars (sans usage encore)
         if embeddings.embeddings_available():
             store = exemplars.ExemplarStore.get()
             known = sorted(set(known) | set(store.known_folders()))
 
-        for i, c in enumerate(clusters, start=1):
-            if c.size < 1:
-                continue
-            card = ClusterCard(c, index=i, known_folders=known)
+        self._pending_clusters = [c for c in clusters if c.size >= 1]
+        self._rendered_count = 0
+        self._known_folders_cache = known
+        self._render_next_cluster_page()
+        self.footer.setText(f"{len(self._pending_clusters)} groupe(s) formes au total.")
+        self.progress_label.setText(f"Termine : {len(self._pending_clusters)} groupes.")
+
+    def _render_next_cluster_page(self) -> None:
+        """Rend la prochaine page de clusters. Anti-OOM."""
+        if hasattr(self, "_more_btn_clusters") and self._more_btn_clusters is not None:
+            self._container_layout.removeWidget(self._more_btn_clusters)
+            self._more_btn_clusters.deleteLater()
+            self._more_btn_clusters = None
+        end = min(self._rendered_count + self.PAGE_SIZE, len(self._pending_clusters))
+        for i in range(self._rendered_count, end):
+            c = self._pending_clusters[i]
+            card = ClusterCard(c, index=i + 1, known_folders=self._known_folders_cache)
             card.move_requested.connect(self._on_move_requested)
             self.cards.append(card)
             self._container_layout.insertWidget(self._container_layout.count() - 1, card)
-        self.footer.setText(f"{len(self.cards)} groupe(s) formes a partir des fichiers analyses.")
-        self.progress_label.setText(f"Termine : {len(self.cards)} groupes.")
+        self._rendered_count = end
+        remaining = len(self._pending_clusters) - self._rendered_count
+        if remaining > 0:
+            self._more_btn_clusters = QPushButton(
+                f"Afficher {min(self.PAGE_SIZE, remaining)} groupes de plus ({remaining} restants)"
+            )
+            self._more_btn_clusters.setProperty("role", "secondary")
+            self._more_btn_clusters.clicked.connect(self._render_next_cluster_page)
+            self._container_layout.insertWidget(self._container_layout.count() - 1, self._more_btn_clusters)
+        else:
+            self._more_btn_clusters = None
 
     def _on_clustering_failed(self, msg: str) -> None:
         self.progress.setVisible(False)
