@@ -170,10 +170,15 @@ class DupGroupContentsDialog(QDialog):
         size_lbl.setStyleSheet(f"color: {TEXT2}; font-size: 11px;")
         name_row.addWidget(size_lbl)
         if idx == 0:
-            tag = QLabel("LE + GROS")
+            tag = QLabel("Meilleure copie (plus volumineuse)")
             tag.setStyleSheet(
-                f"background: {OK}; color: black; padding: 1px 6px; "
-                f"border-radius: 3px; font-size: 9px; font-weight: 700;"
+                f"background: {OK}; color: black; padding: 2px 8px; "
+                f"border-radius: 3px; font-size: 10px; font-weight: 700;"
+            )
+            tag.setToolTip(
+                "Cette copie est la plus volumineuse du groupe. "
+                "Generalement la version originale (moins compressee). "
+                "Recommandation : la garder, supprimer les autres."
             )
             name_row.addWidget(tag)
         name_row.addStretch()

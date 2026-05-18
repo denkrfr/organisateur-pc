@@ -104,11 +104,12 @@ class ThumbnailCard(QFrame):
         meta_row.addWidget(size_lbl)
         meta_row.addStretch()
         if is_biggest:
-            badge = QLabel("LE + GROS")
+            badge = QLabel("A garder")
             badge.setStyleSheet(
-                f"background: {OK}; color: black; padding: 1px 6px; "
-                f"border-radius: 3px; font-size: 9px; font-weight: 700;"
+                f"background: {OK}; color: black; padding: 2px 7px; "
+                f"border-radius: 3px; font-size: 10px; font-weight: 700;"
             )
+            badge.setToolTip("Version la plus volumineuse, generalement l'originale. Recommande de la garder.")
             meta_row.addWidget(badge)
         layout.addLayout(meta_row)
 
@@ -217,7 +218,7 @@ class DupGroupCard(QFrame):
         header.addStretch()
 
         # Boutons rapide groupe
-        keep_btn = QPushButton("Garder le + gros, cocher les autres")
+        keep_btn = QPushButton("Garder la plus grosse, cocher les autres")
         keep_btn.setProperty("role", "secondary")
         keep_btn.clicked.connect(self.check_all_but_biggest)
         header.addWidget(keep_btn)
@@ -759,11 +760,12 @@ class DupGroupRow(QFrame):
             name_lbl.setStyleSheet(f"color: {TEXT}; font-weight: 600; font-size: 12px;")
             name_row.addWidget(name_lbl)
             if i == 0 and not collapsed:
-                tag = QLabel("LE + GROS")
+                tag = QLabel("A garder")
                 tag.setStyleSheet(
-                    f"background: {OK}; color: black; padding: 1px 6px; "
-                    f"border-radius: 3px; font-size: 9px; font-weight: 700;"
+                    f"background: {OK}; color: black; padding: 2px 7px; "
+                    f"border-radius: 3px; font-size: 10px; font-weight: 700;"
                 )
+                tag.setToolTip("Version la plus volumineuse, generalement l'originale. Recommande de la garder.")
                 name_row.addWidget(tag)
             size_lbl = QLabel(fmt_size(asset.size))
             size_lbl.setStyleSheet(f"color: {TEXT2}; font-size: 11px;")

@@ -34,8 +34,13 @@ IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".heic", ".heif"
 DOC_EXTS = {".pdf", ".docx", ".xlsx"}
 SUPPORTED_EXTS = IMAGE_EXTS | DOC_EXTS
 
-QUASI_THRESHOLD_PHOTO = 5
-QUASI_THRESHOLD_SCREENSHOT = 7
+# Seuils Hamming distance pour quasi-doublons (aHash 64-bit).
+# Plus la valeur est basse, plus c'est strict (moins de faux positifs).
+# Avant : 5 (PHOTO) / 7 (SCREENSHOT) - generait trop de faux positifs sur
+# des photos visuellement proches mais pas reellement doublons.
+# Maintenant : 2 / 3 - tres strict, capture juste les vraies recompressions.
+QUASI_THRESHOLD_PHOTO = 2
+QUASI_THRESHOLD_SCREENSHOT = 3
 
 # Parallelisme : I/O-bound, le GIL n'est pas un probleme. On garde modeste pour
 # ne pas saturer le disque.

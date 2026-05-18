@@ -107,8 +107,14 @@ class DedupView(QWidget):
 
         # --- Options + scan ---
         opt_row = QHBoxLayout()
-        self.phash_cb = QCheckBox("Detecter aussi les quasi-doublons (pHash + texte)")
-        self.phash_cb.setChecked(True)
+        self.phash_cb = QCheckBox("Detecter aussi les quasi-doublons (recompressions, exports HEIC/JPG)")
+        self.phash_cb.setChecked(False)
+        self.phash_cb.setToolTip(
+            "Decoche par defaut : detection visuelle via aHash (8x8 grayscale) qui "
+            "peut generer des faux positifs (photos visuellement proches mais pas "
+            "vraiment doublons). A activer surtout pour retrouver des "
+            "compressions WhatsApp / exports HEIC->JPG de la meme photo originale."
+        )
         opt_row.addWidget(self.phash_cb)
         opt_row.addStretch()
         self.scan_btn = QPushButton("Scanner")
@@ -168,7 +174,7 @@ class DedupView(QWidget):
 
         # --- Bottom bar ---
         bottom = QHBoxLayout()
-        all_but_biggest_btn = QPushButton("Tous groupes : cocher sauf le + gros")
+        all_but_biggest_btn = QPushButton("Tous groupes : garder la version la plus volumineuse")
         all_but_biggest_btn.setProperty("role", "secondary")
         all_but_biggest_btn.clicked.connect(self._check_all_but_biggest_global)
         bottom.addWidget(all_but_biggest_btn)
