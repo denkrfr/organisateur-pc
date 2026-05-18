@@ -1,0 +1,53 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtualenv
+.venv/
+venv/
+
+# Env
+.env
+
+# Editors
+.idea/
+.vscode/
+
+# PyInstaller
+*.spec
+build/
+dist/
+dist_installer/
+
+# Logs
+*.log
+
+# Data utilisateur (jamais commit)
+data/
+.organisateur-pc/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Residus d'autres projets / web (pas lies a l'organisateur)
+_chunks/
+_chunk_turbo.js
+_deck-build/
+youmind_page.html
+_youmind_page.html
+*.html
+.claude/
+node_modules/
+package-lock.json
+*.docx
+*.pdf
+
+# ONNX models : trop lourds pour git (un fichier > 100 MB).
+# Telecharges au build via scripts/download_models.py
+assets/models/clip/vision_model.onnx
+assets/models/clip/text_model.onnx
+assets/models/e5/model.onnx
+assets/models/e5/tokenizer.json
