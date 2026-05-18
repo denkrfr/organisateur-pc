@@ -603,11 +603,17 @@ class DupGroupRow(QFrame):
 
     selection_changed = pyqtSignal()  # le check global du groupe a change
 
+    # Seuil : si <= INLINE_THRESHOLD fichiers, affichage direct avec checkboxes
+    # individuelles. Sinon : preview de 2 + bouton "Voir / Modifier".
+    INLINE_THRESHOLD = 4
+
     def __init__(self, group: DupGroup, index: int, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.group = group
         self.index = index
         self._expanded = False
+        # is_small_group : assez petit pour tout afficher inline avec checkboxes
+        self._is_small = len(group.items) <= self.INLINE_THRESHOLD
         # set_checked initial : tout coche sauf le + gros (pattern user le + courant)
         # Mais on commence False : le user clique "Tous groupes: cocher sauf le + gros"
         self._file_checks: list[bool] = [False] * len(group.items)
@@ -622,14 +628,17 @@ class DupGroupRow(QFrame):
         outer.setContentsMargins(12, 10, 12, 10)
         outer.setSpacing(6)
 
-        # === Ligne principale ===
+        # === Ligne principale (header avec badge + recap) ===
         main_row = QHBoxLayout()
         main_row.setSpacing(10)
 
-        # Checkbox globale
+        # Checkbox globale (utilisee pour le bouton "tous groupes : cocher sauf le + gros")
+        # Cachee visuellement pour les small groups (chaque fichier a sa propre checkbox)
         self.master_check = QCheckBox()
         self.master_check.setChecked(True)
         self.master_check.toggled.connect(self._on_master_toggled)
+        if self._is_small:
+            self.master_check.setVisible(False)
         main_row.addWidget(self.master_check)
 
         # Badge numerique
@@ -642,20 +651,27 @@ class DupGroupRow(QFrame):
         )
         main_row.addWidget(badge)
 
-        # 2 thumbnails apercu (les 2 premiers items)
-        thumbs_row = QHBoxLayout()
-        thumbs_row.setSpacing(4)
-        for i, asset in enumerate(group.items[:2]):
-            t = make_mini_thumbnail(asset.path)
-            thumbs_row.addWidget(t)
-        main_row.addLayout(thumbs_row)
+        # 2 thumbnails apercu en haut (uniquement pour les gros groupes, sinon
+        # redondant avec les thumbnails inline)
+        if not self._is_small:
+            thumbs_row = QHBoxLayout()
+            thumbs_row.setSpacing(4)
+            for i, asset in enumerate(group.items[:2]):
+                t = make_mini_thumbnail(asset.path)
+                thumbs_row.addWidget(t)
+            main_row.addLayout(thumbs_row)
 
-        # Liste verticale des fichiers (preview 2 lignes en collapsed)
+        # Liste verticale des fichiers
         self.files_container = QWidget()
         self.files_layout = QVBoxLayout(self.files_container)
         self.files_layout.setContentsMargins(0, 0, 0, 0)
         self.files_layout.setSpacing(4)
-        self._render_files(collapsed=True)
+        # Small groups : rendu inline complet avec checkboxes (collapsed=False)
+        # Big groups : preview 2 lignes, bouton "Voir/Modifier" pour le detail
+        if self._is_small:
+            self._render_files_inline()
+        else:
+            self._render_files(collapsed=True)
         main_row.addWidget(self.files_container, stretch=1)
 
         # Recap a droite
@@ -688,24 +704,29 @@ class DupGroupRow(QFrame):
         recap_box.addWidget(match_lbl)
         main_row.addLayout(recap_box)
 
-        # Chevron expand
-        # Bouton "Voir/Modifier la selection" : ouvre le dialog dedie
-        self.see_btn = QPushButton("Voir / Modifier")
-        self.see_btn.setStyleSheet(
-            f"background: {ACCENT}; color: white; padding: 6px 12px; "
-            f"border-radius: 4px; font-weight: 700;"
-        )
-        self.see_btn.setToolTip("Voir tous les fichiers du groupe et choisir individuellement")
-        self.see_btn.clicked.connect(self._open_selection_dialog)
-        main_row.addWidget(self.see_btn)
+        # Boutons Voir/Modifier + expand : visible UNIQUEMENT si gros groupe
+        # (small groups montrent deja tout inline avec checkboxes)
+        if not self._is_small:
+            self.see_btn = QPushButton("Voir / Modifier")
+            self.see_btn.setStyleSheet(
+                f"background: {ACCENT}; color: white; padding: 6px 12px; "
+                f"border-radius: 4px; font-weight: 700;"
+            )
+            self.see_btn.setToolTip("Voir tous les fichiers du groupe et choisir individuellement")
+            self.see_btn.clicked.connect(self._open_selection_dialog)
+            main_row.addWidget(self.see_btn)
 
-        # Ancien chevron expand (raccourci power user, garde)
-        self.expand_btn = QPushButton("v")
-        self.expand_btn.setFixedSize(28, 28)
-        self.expand_btn.setProperty("role", "secondary")
-        self.expand_btn.setToolTip("Voir les fichiers ici (mode rapide)")
-        self.expand_btn.clicked.connect(self._toggle_expand)
-        main_row.addWidget(self.expand_btn)
+            self.expand_btn = QPushButton("v")
+            self.expand_btn.setFixedSize(28, 28)
+            self.expand_btn.setProperty("role", "secondary")
+            self.expand_btn.setToolTip("Voir les fichiers ici (mode rapide)")
+            self.expand_btn.clicked.connect(self._toggle_expand)
+            main_row.addWidget(self.expand_btn)
+        else:
+            # Pour les small groups, on n'a pas ces widgets mais on stub
+            # pour eviter les AttributeError dans les methodes legacy
+            self.see_btn = None  # type: ignore[assignment]
+            self.expand_btn = None  # type: ignore[assignment]
 
         outer.addLayout(main_row)
 
@@ -726,6 +747,61 @@ class DupGroupRow(QFrame):
                 avg = sum(distances) / len(distances)
                 return int(round((64 - avg) / 64 * 100))
         return 95
+
+    def _render_files_inline(self) -> None:
+        """Rendu pour groupes <= INLINE_THRESHOLD : chaque fichier en ligne avec
+        thumbnail + checkbox individuelle + nom + taille + chemin. Pas besoin
+        de cliquer 'Voir/Modifier'."""
+        self._clear_files()
+        for i, asset in enumerate(self.group.items):
+            row = QFrame()
+            row.setStyleSheet(
+                f"QFrame {{ background: transparent; border: none; }}"
+            )
+            h = QHBoxLayout(row)
+            h.setContentsMargins(0, 0, 0, 0)
+            h.setSpacing(8)
+
+            cb = QCheckBox()
+            cb.setChecked(self._file_checks[i])
+            cb.toggled.connect(lambda c, idx=i: self._on_file_toggled(idx, c))
+            h.addWidget(cb)
+
+            thumb = make_mini_thumbnail(asset.path, size=48)
+            h.addWidget(thumb)
+
+            text_col = QVBoxLayout()
+            text_col.setSpacing(0)
+            name_row = QHBoxLayout()
+            name_row.setSpacing(6)
+            name_lbl = QLabel(asset.path.name)
+            name_lbl.setStyleSheet(f"color: {TEXT}; font-weight: 600; font-size: 12px;")
+            name_lbl.setToolTip(asset.path.name)
+            name_row.addWidget(name_lbl)
+            if i == 0:
+                tag = QLabel("A garder")
+                tag.setStyleSheet(
+                    f"background: {OK}; color: black; padding: 2px 7px; "
+                    f"border-radius: 3px; font-size: 10px; font-weight: 700;"
+                )
+                tag.setToolTip(
+                    "Version la plus volumineuse, generalement l'originale. "
+                    "Recommande de la garder."
+                )
+                name_row.addWidget(tag)
+            size_lbl = QLabel(fmt_size(asset.size))
+            size_lbl.setStyleSheet(f"color: {TEXT2}; font-size: 11px;")
+            name_row.addWidget(size_lbl)
+            name_row.addStretch()
+            text_col.addLayout(name_row)
+            path_lbl = QLabel(str(asset.path))
+            path_lbl.setStyleSheet(f"color: {TEXT3}; font-size: 10px;")
+            path_lbl.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+            path_lbl.setToolTip(str(asset.path))
+            text_col.addWidget(path_lbl)
+            h.addLayout(text_col, stretch=1)
+
+            self.files_layout.addWidget(row)
 
     def _clear_files(self) -> None:
         while self.files_layout.count():
@@ -795,7 +871,10 @@ class DupGroupRow(QFrame):
         # Master = "tous les fichiers sauf le + gros" si coche, sinon aucun
         for i in range(len(self._file_checks)):
             self._file_checks[i] = checked and i != 0
-        if self._expanded:
+        # Rerender les checkboxes visuelles pour refleter le changement
+        if self._is_small:
+            self._render_files_inline()
+        elif self._expanded:
             self._render_files(collapsed=False)
         self.selection_changed.emit()
 
@@ -835,7 +914,9 @@ class DupGroupRow(QFrame):
         self.master_check.blockSignals(True)
         self.master_check.setChecked(False)
         self.master_check.blockSignals(False)
-        if self._expanded:
+        if self._is_small:
+            self._render_files_inline()
+        elif self._expanded:
             self._render_files(collapsed=False)
         self.selection_changed.emit()
 
