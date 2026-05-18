@@ -29,6 +29,7 @@ class Cluster:
     """Un groupe de fichiers similaires."""
     items: list[Path] = field(default_factory=list)
     kind: str = "image"  # 'image' ou 'doc'
+    suggested_name: str = ""  # nom propose (mode API uniquement, sinon vide)
 
     @property
     def size(self) -> int:

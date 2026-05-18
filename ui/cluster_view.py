@@ -27,16 +27,60 @@ from PyQt6.QtCore import QSize
 from PIL import Image as _PILImage
 
 from core import clustering, docs, exemplars, embeddings, sort
+from core import api_key_store as ks, api_providers as ap
 from core.clustering import Cluster
 from .styles import (
     fmt_size, ACCENT, ACCENT2, TEXT, TEXT2, TEXT3, CARD, CARD2, BORDER, OK,
 )
 from .result_cards import make_mini_thumbnail
+from .tri_mode_dialog import TriModeDialog
 
 
 # ---------------------------------------------------------------------------
 # Worker clustering en thread
 # ---------------------------------------------------------------------------
+class ApiClusterWorker(QObject):
+    """Variante du ClusterWorker qui utilise une API IA cloud au lieu de CLIP local."""
+    progress = pyqtSignal(int, int, str)
+    finished = pyqtSignal(list)
+    failed = pyqtSignal(str)
+
+    def __init__(self, paths: list[Path], provider: str, api_key: str) -> None:
+        super().__init__()
+        self.paths = paths
+        self.provider = provider
+        self.api_key = api_key
+        import threading as _th
+        self._cancel_event = _th.Event()
+
+    def cancel(self) -> None:
+        self._cancel_event.set()
+
+    def run(self) -> None:
+        try:
+            items = [ap.ApiClusterItem(path=p) for p in self.paths]
+            api_clusters = ap.analyze_with_api(
+                self.provider,  # type: ignore[arg-type]
+                self.api_key,
+                items,
+                on_progress=lambda c, t, lbl: self.progress.emit(c, t, lbl),
+                cancel_check=self._cancel_event.is_set,
+            )
+            # Convertit ApiCluster -> Cluster pour reutiliser l'UI existante
+            converted: list[Cluster] = []
+            for ac in api_clusters:
+                converted.append(Cluster(
+                    items=[it.path for it in ac.items],
+                    kind="image",
+                    suggested_name=ac.suggested_name,
+                ))
+            self.finished.emit(converted)
+        except ap.ApiCancelled:
+            self.failed.emit("Analyse annulee.")
+        except Exception as e:  # noqa: BLE001
+            self.failed.emit(str(e))
+
+
 class ClusterWorker(QObject):
     progress = pyqtSignal(int, int, str)
     finished = pyqtSignal(list)  # list[Cluster]
@@ -307,6 +351,9 @@ class ClusterCard(QFrame):
         action = QHBoxLayout()
         action.addWidget(QLabel("Nom du dossier :"))
         self.folder_input = QLineEdit()
+        # Si l'API a propose un nom, pre-remplir (l'user peut modifier)
+        if cluster.suggested_name:
+            self.folder_input.setText(cluster.suggested_name)
         self.folder_input.setPlaceholderText("Tape un nom (ex: skyvision, Plage, Factures...)")
         self.folder_input.setStyleSheet(
             f"background: {CARD2}; color: {TEXT}; border: 1px solid {BORDER}; "
@@ -655,10 +702,18 @@ class ClusterView(QWidget):
         if n_filtered > 0:
             msg += f" ({n_filtered} ecarte(s) par filtre)"
         self.progress_label.setText(msg + "...")
-        if not embeddings.embeddings_available():
+
+        # === Choix du mode : local CLIP vs API cloud ===
+        mode_dlg = TriModeDialog(self)
+        if mode_dlg.exec() != QDialog.DialogCode.Accepted or not mode_dlg.chosen_mode:
+            self.progress_label.setText("")
+            return
+        mode = mode_dlg.chosen_mode
+
+        if mode == "local" and not embeddings.embeddings_available():
             QMessageBox.critical(
                 self, "Modeles indispo",
-                "Le clustering necessite les modeles ONNX (CLIP). Verifie le bundle."
+                "Le clustering local necessite les modeles ONNX (CLIP). Verifie le bundle."
             )
             return
 
@@ -669,9 +724,20 @@ class ClusterView(QWidget):
         self.progress_label.setText("Analyse...")
         self.analyze_btn.setEnabled(False)
 
-        threshold = self.sim_slider.value() / 100.0
         self._thread = QThread(self)
-        self._worker = ClusterWorker(files, threshold=threshold)
+        if mode == "local":
+            threshold = self.sim_slider.value() / 100.0
+            self._worker = ClusterWorker(files, threshold=threshold)
+        else:
+            # Mode API : utilise le provider configure
+            provider = ks.get_configured_provider()
+            api_key = ks.load_api_key(provider) if provider else None
+            if not provider or not api_key:
+                QMessageBox.critical(self, "Config manquante", "Cle API introuvable.")
+                self.analyze_btn.setEnabled(True)
+                self.progress.setVisible(False)
+                return
+            self._worker = ApiClusterWorker(files, provider, api_key)
         self._worker.moveToThread(self._thread)
         self._thread.started.connect(self._worker.run)
         self._worker.progress.connect(self._on_progress)

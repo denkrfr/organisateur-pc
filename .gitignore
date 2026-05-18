@@ -36,14 +36,24 @@ Thumbs.db
 _chunks/
 _chunk_turbo.js
 _deck-build/
-youmind_page.html
-_youmind_page.html
-*.html
+_scrape_*
+youmind*
+youmind-prompts*
+gpt_image_2_prompt_skill.md
+this-global-presentation.pptx
+build_excel.py
+fetch_all_prompts.py
+split_by_category.py
+find_api_call.sh
 .claude/
 node_modules/
 package-lock.json
 *.docx
 *.pdf
+*.html
+*.xlsx
+*.pptx
+release_notes.md
 
 # ONNX models : trop lourds pour git (un fichier > 100 MB).
 # Telecharges au build via scripts/download_models.py
