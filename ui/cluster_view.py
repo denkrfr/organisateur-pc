@@ -490,9 +490,19 @@ class ClusterView(QWidget):
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(10)
 
+        # Ligne titre + bouton Retour (visible uniquement quand resultats affiches)
+        title_row = QHBoxLayout()
+        self.back_btn = QPushButton("← Retour")
+        self.back_btn.setProperty("role", "secondary")
+        self.back_btn.setToolTip("Effacer les groupes et revenir a la selection de fichiers")
+        self.back_btn.clicked.connect(self._back_to_setup)
+        self.back_btn.setVisible(False)
+        title_row.addWidget(self.back_btn)
         title = QLabel("Tri par ressemblance")
         title.setStyleSheet(f"color: {TEXT}; font-size: 22px; font-weight: 800;")
-        layout.addWidget(title)
+        title_row.addWidget(title)
+        title_row.addStretch()
+        layout.addLayout(title_row)
 
         subtitle = QLabel(
             "Regroupe automatiquement les fichiers qui se ressemblent. "
@@ -789,6 +799,25 @@ class ClusterView(QWidget):
         self._render_next_cluster_page()
         self.footer.setText(f"{len(self._pending_clusters)} groupe(s) formes au total.")
         self.progress_label.setText(f"Termine : {len(self._pending_clusters)} groupes.")
+        # Affiche le bouton Retour si on a effectivement des groupes
+        if self._pending_clusters:
+            self.back_btn.setVisible(True)
+
+    def _back_to_setup(self) -> None:
+        """Efface les groupes et revient a l'etat initial de selection."""
+        self._clear_cards()
+        # Retire aussi le bouton "Afficher plus" s'il existe
+        if hasattr(self, "_more_btn_clusters") and self._more_btn_clusters is not None:
+            self._container_layout.removeWidget(self._more_btn_clusters)
+            self._more_btn_clusters.deleteLater()
+            self._more_btn_clusters = None
+        self._pending_clusters = []
+        self._rendered_count = 0
+        self._empty_lbl.setVisible(True)
+        self._empty_lbl.setText("Choisis un dossier en vrac et clique \"Analyser et regrouper\".")
+        self.progress_label.setText("")
+        self.footer.setText("0 groupe")
+        self.back_btn.setVisible(False)
 
     def _render_next_cluster_page(self) -> None:
         """Rend la prochaine page de clusters. Anti-OOM."""

@@ -76,9 +76,19 @@ class DedupView(QWidget):
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(10)
 
+        # Ligne titre + bouton Retour (visible uniquement quand resultats affiches)
+        title_row = QHBoxLayout()
+        self.back_btn = QPushButton("← Retour")
+        self.back_btn.setProperty("role", "secondary")
+        self.back_btn.setToolTip("Effacer les resultats et revenir a la selection de dossiers")
+        self.back_btn.clicked.connect(self._back_to_setup)
+        self.back_btn.setVisible(False)
+        title_row.addWidget(self.back_btn)
         title = QLabel("Detection de doublons")
         title.setProperty("role", "title")
-        layout.addWidget(title)
+        title_row.addWidget(title)
+        title_row.addStretch()
+        layout.addLayout(title_row)
 
         subtitle = QLabel(
             "Scanne les dossiers pour les doublons exacts et quasi-doublons "
@@ -277,6 +287,20 @@ class DedupView(QWidget):
         self.scan_btn.setVisible(True)
         self.cancel_btn.setVisible(False)
         self._render_results(groups)
+        # Affiche le bouton Retour si on a effectivement des resultats a montrer
+        if groups:
+            self.back_btn.setVisible(True)
+
+    def _back_to_setup(self) -> None:
+        """Efface les resultats et revient a l'etat initial de selection."""
+        self._clear_results()
+        self.groups = []
+        self.groups_badge.setText("0 groupes")
+        self._empty_lbl.setText("Lance un scan pour voir les doublons.")
+        self._empty_lbl.setVisible(True)
+        self.progress_label.setText("")
+        self.footer.setText("0 groupe trouve")
+        self.back_btn.setVisible(False)
 
     def _on_failed(self, error: str) -> None:
         self.progress_bar.setVisible(False)
@@ -418,26 +442,59 @@ class DedupView(QWidget):
         if ans != QMessageBox.StandardButton.Yes:
             return
 
+        # === Phase 1 : send2trash (operation systeme) ===
         moved = 0
         errors: list[str] = []
+        removed_per_row: dict[object, list[Asset]] = {}
         for row, asset in checked:
             try:
                 send2trash(str(asset.path))
-                # Retire le fichier du groupe pour la prochaine action
-                if asset in row.group.items:
-                    row.group.items.remove(asset)
+                removed_per_row.setdefault(row, []).append(asset)
                 moved += 1
-            except OSError as e:
+            except Exception as e:  # noqa: BLE001 — OSError ou autre
                 errors.append(f"{asset.path.name}: {e}")
 
-        # Retire les groupes qui n'ont plus que 0 ou 1 fichier
-        for row in list(self.group_rows):
-            if len(row.group.items) < 2:
-                self._results_layout.removeWidget(row)
-                self.group_rows.remove(row)
-                row.deleteLater()
-        self.groups_badge.setText(f"{len(self.group_rows)} groupes")
+        # === Phase 2 : mise a jour de l'UI (en mode safe) ===
+        # On bloque tous les signaux pendant la manipulation pour eviter qu'une
+        # checkbox emette un toggled sur un widget en cours de destruction.
+        try:
+            for row, removed_assets in removed_per_row.items():
+                # Retire les assets supprimes des items du groupe
+                for a in removed_assets:
+                    if a in row.group.items:
+                        row.group.items.remove(a)
+                # Reset les checks pour aligner avec la nouvelle liste d'items
+                row._file_checks = [False] * len(row.group.items)
+                # Rerender les fichiers du row si > 1 item restant
+                if len(row.group.items) >= 2:
+                    if row._is_small:
+                        row._render_files_inline()
+                    elif row._expanded:
+                        row._render_files(collapsed=False)
+                    else:
+                        row._render_files(collapsed=True)
 
+            # Retire les groupes qui n'ont plus que 0 ou 1 fichier
+            for row in list(self.group_rows):
+                if len(row.group.items) < 2:
+                    try:
+                        self._results_layout.removeWidget(row)
+                        row.setParent(None)  # detache avant deleteLater
+                        row.deleteLater()
+                    except Exception:  # noqa: BLE001
+                        pass
+                    self.group_rows.remove(row)
+            self.groups_badge.setText(f"{len(self.group_rows)} groupes")
+            self._update_footer()
+        except Exception as e:  # noqa: BLE001 — proteger l'UI d'un crash total
+            QMessageBox.warning(
+                self, "Suppression OK mais probleme UI",
+                f"Les fichiers ont ete envoyes a la corbeille mais l'UI a eu un "
+                f"souci : {e}. Tu peux relancer un scan pour rafraichir.",
+            )
+            return
+
+        # === Phase 3 : feedback final ===
         msg = f"{moved} fichier(s) envoyes a la corbeille."
         if errors:
             msg += "\n\nErreurs :\n" + "\n".join(errors[:10])

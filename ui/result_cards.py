@@ -879,8 +879,11 @@ class DupGroupRow(QFrame):
         self.selection_changed.emit()
 
     def _on_file_toggled(self, idx: int, checked: bool) -> None:
-        self._file_checks[idx] = checked
-        self.selection_changed.emit()
+        # Protection : si l'index est hors-bornes (apres une suppression
+        # ou un rerender en cours), on ignore le signal pour eviter crash.
+        if 0 <= idx < len(self._file_checks):
+            self._file_checks[idx] = checked
+            self.selection_changed.emit()
 
     def _open_selection_dialog(self) -> None:
         """Ouvre le dialog 'Voir / Modifier la selection' avec tous les fichiers + checkbox individuelle."""
