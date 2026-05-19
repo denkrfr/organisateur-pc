@@ -78,7 +78,7 @@ class TriModeDialog(QDialog):
         # === Mode API ===
         api_card = QFrame()
         api_card.setStyleSheet(
-            f"QFrame {{ background: {CARD}; border: 2px solid {ACCENT}; "
+            f"QFrame {{ background: {CARD}; border: 1px solid {BORDER}; "
             f"border-radius: 8px; padding: 14px; }}"
         )
         acl = QVBoxLayout(api_card)

@@ -595,8 +595,9 @@ class ClusterView(QWidget):
         rm_btn.setProperty("role", "secondary")
         rm_btn.clicked.connect(self._remove_source)
         src_btns.addWidget(rm_btn)
-        clear_btn = QPushButton("Vider")
+        clear_btn = QPushButton("Vider la liste")
         clear_btn.setProperty("role", "secondary")
+        clear_btn.setToolTip("Retire tous les fichiers/dossiers de la liste (ne touche pas aux fichiers sur disque)")
         clear_btn.clicked.connect(self._clear_sources)
         src_btns.addWidget(clear_btn)
         src_btns.addStretch()
@@ -1088,9 +1089,14 @@ class ClusterView(QWidget):
             self._move_all_running = False
             self._move_all_total = 0
             self.move_all_btn.setEnabled(True)
+            # Vide la liste des sources : les fichiers sont deplaces, garder
+            # ces chemins n'a aucun sens (et certains pointent vers du vide).
+            self._clear_sources()
             QMessageBox.information(
                 self, "Termine",
-                f"[FINI] {done} groupe(s) deplaces."
+                f"[FINI] {done} groupe(s) deplaces.\n\n"
+                f"La liste des sources a ete videe automatiquement. "
+                f"Tu peux ajouter de nouveaux fichiers/dossiers pour un autre tri."
             )
             return
         cluster, name = self._move_all_queue.pop(0)
