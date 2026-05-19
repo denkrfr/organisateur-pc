@@ -32,7 +32,11 @@ VERIFY_CHUNK = 1024 * 1024  # 1 MB par lecture pour byte-by-byte
 
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".heic", ".heif", ".tiff", ".tif"}
 DOC_EXTS = {".pdf", ".docx", ".xlsx"}
-SUPPORTED_EXTS = IMAGE_EXTS | DOC_EXTS
+# Videos : SHA256 marche sur n'importe quel fichier, donc detecter 2 videos
+# identiques est aussi simple qu'2 images. On ne fait pas de quasi-doublon
+# sur les videos (pas d'aHash video) : juste de l'exact.
+VIDEO_EXTS = {".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v", ".3gp", ".wmv", ".flv"}
+SUPPORTED_EXTS = IMAGE_EXTS | DOC_EXTS | VIDEO_EXTS
 
 # Seuils Hamming distance pour quasi-doublons (aHash 64-bit).
 # Plus la valeur est basse, plus c'est strict (moins de faux positifs).

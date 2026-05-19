@@ -296,6 +296,7 @@ class ClusterCard(QFrame):
     """Carte d'un groupe : nb fichiers + thumbnails + input + bouton."""
 
     move_requested = pyqtSignal(object, str)  # (Cluster, folder_name)
+    recluster_loose_requested = pyqtSignal()  # bouton "Elargir" : re-cluster global
 
     def __init__(self, cluster: Cluster, index: int, known_folders: list[str], parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -375,9 +376,11 @@ class ClusterCard(QFrame):
         preview.setMaximumHeight(16)
         outer.addWidget(preview)
 
-        # Bouton secondaire discret : ouvre le dialog de tri fin du cluster
+        # Boutons secondaires discrets : "Voir / decocher" + "Elargir"
         self._see_btn = None
         if cluster.size > 1:
+            sec_row = QHBoxLayout()
+            sec_row.setSpacing(6)
             self._see_btn = QPushButton(f"Voir / decocher les intrus ({cluster.size} fichiers)")
             self._see_btn.setProperty("role", "secondary")
             self._see_btn.setStyleSheet(
@@ -386,7 +389,25 @@ class ClusterCard(QFrame):
             )
             self._see_btn.setToolTip("Optionnel : voir tous les fichiers et decocher ceux qui n'ont rien a faire la")
             self._see_btn.clicked.connect(self._open_contents_dialog)
-            outer.addWidget(self._see_btn)
+            sec_row.addWidget(self._see_btn)
+            # Bouton "Elargir" : relance le clustering global avec un seuil -0.05.
+            # Utile si tu vois qu'un groupe est trop fin et devrait inclure des
+            # photos voisines non-regroupees.
+            elargir = QPushButton("Elargir le regroupement")
+            elargir.setProperty("role", "secondary")
+            elargir.setStyleSheet(
+                f"color: {ACCENT2}; background: transparent; border: 1px solid {ACCENT}; "
+                f"border-radius: 4px; padding: 4px 10px; font-size: 11px;"
+            )
+            elargir.setToolTip(
+                "Re-lance le clustering avec un seuil de similarite reduit de 0.05. "
+                "Les groupes deviendront plus larges (et donc plus permissifs). "
+                "Utile si ce groupe te semble trop fin."
+            )
+            elargir.clicked.connect(self.recluster_loose_requested.emit)
+            sec_row.addWidget(elargir)
+            sec_row.addStretch()
+            outer.addLayout(sec_row)
 
         # Input + bouton (Deplacer est le bouton PRIMAIRE, bien visible)
         action = QHBoxLayout()
@@ -546,6 +567,10 @@ class ClusterView(QWidget):
         self._thread: QThread | None = None
         self._move_worker: MoveClusterWorker | None = None
         self._move_thread: QThread | None = None
+        # Paths utilises pour le dernier clustering, pour pouvoir relancer
+        # un re-clustering plus permissif sans re-scanner les sources.
+        self._last_clustered_paths: list[Path] = []
+        self._last_used_threshold: float = 0.88
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -688,9 +713,26 @@ class ClusterView(QWidget):
         self.scroll.setWidget(self._container)
         layout.addWidget(self.scroll, stretch=1)
 
-        # Bottom bar : action globale "Deplacer tous les groupes nommes"
+        # Bottom bar : actions globales
         bottom = QHBoxLayout()
         bottom.addStretch()
+
+        # Bouton "Deplacer les isoles vers un album commun"
+        # Apparait si au moins 1 cluster de taille 1 (singleton) existe.
+        self.move_singletons_btn = QPushButton("Deplacer les isoles dans un album commun")
+        self.move_singletons_btn.setStyleSheet(
+            f"background: {CARD2}; color: {TEXT}; padding: 8px 14px; "
+            f"border-radius: 5px; font-weight: 600; font-size: 11px; "
+            f"border: 1px solid {ACCENT2};"
+        )
+        self.move_singletons_btn.setToolTip(
+            "Regroupe tous les fichiers qui n'ont aucun similaire (clusters d'1 "
+            "seul fichier) dans un meme dossier 'Autres' (nom modifiable)."
+        )
+        self.move_singletons_btn.clicked.connect(self._move_all_singletons)
+        self.move_singletons_btn.setVisible(False)
+        bottom.addWidget(self.move_singletons_btn)
+
         self.move_all_btn = QPushButton("Deplacer TOUS les groupes nommes")
         self.move_all_btn.setStyleSheet(
             f"background: {OK}; color: black; padding: 8px 18px; "
@@ -835,9 +877,13 @@ class ClusterView(QWidget):
         self.progress_label.setText("Analyse...")
         self.analyze_btn.setEnabled(False)
 
+        # Stocke pour pouvoir re-clusteriser plus tard ("Elargir") sans rescan
+        self._last_clustered_paths = list(files)
+
         self._thread = QThread(self)
         if mode == "local":
             threshold = self.sim_slider.value() / 100.0
+            self._last_used_threshold = threshold
             self._worker = ClusterWorker(files, threshold=threshold)
         else:
             # Mode API : utilise le provider configure
@@ -916,6 +962,7 @@ class ClusterView(QWidget):
         self.footer.setText("0 groupe")
         self.back_btn.setVisible(False)
         self.move_all_btn.setVisible(False)
+        self.move_singletons_btn.setVisible(False)
 
     def _render_next_cluster_page(self) -> None:
         """Rend la prochaine page de clusters. Anti-OOM."""
@@ -928,6 +975,7 @@ class ClusterView(QWidget):
             c = self._pending_clusters[i]
             card = ClusterCard(c, index=i + 1, known_folders=self._known_folders_cache)
             card.move_requested.connect(self._on_move_requested)
+            card.recluster_loose_requested.connect(self._recluster_loose)
             self.cards.append(card)
             self._container_layout.insertWidget(self._container_layout.count() - 1, card)
         self._rendered_count = end
@@ -1037,6 +1085,72 @@ class ClusterView(QWidget):
             self._move_thread = None
 
     # ==================================================================
+    # Re-cluster plus permissif ("Elargir") : seuil -0.05 sur les memes paths
+    # ==================================================================
+    def _recluster_loose(self) -> None:
+        """Re-lance le clustering local avec un seuil reduit de 0.05.
+
+        N'a de sens qu'en mode local CLIP. Si on est en mode API, on previent
+        l'user que ce n'est pas applicable.
+        """
+        if not self._last_clustered_paths:
+            QMessageBox.information(
+                self, "Pas de session",
+                "Aucune analyse en cours a elargir. Lance d'abord une analyse."
+            )
+            return
+        new_threshold = max(0.65, self._last_used_threshold - 0.05)
+        if new_threshold >= self._last_used_threshold:
+            QMessageBox.information(
+                self, "Deja au minimum",
+                "Le seuil est deja au minimum (0.65), impossible d'elargir plus. "
+                "Au-dela, les groupes deviennent du n'importe quoi."
+            )
+            return
+
+        ans = QMessageBox.question(
+            self, "Elargir le regroupement",
+            f"Re-lancer le clustering avec un seuil de {new_threshold:.2f} "
+            f"(au lieu de {self._last_used_threshold:.2f}) ?\n\n"
+            f"Les groupes vont fusionner. Tes noms de dossiers tapes seront "
+            f"perdus puisqu'on rebuild les groupes.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Yes,
+        )
+        if ans != QMessageBox.StandardButton.Yes:
+            return
+
+        # Lance un nouveau ClusterWorker avec le seuil reduit sur les MEMES paths
+        # (pas de rescan des sources, vu qu'elles ont pu etre videes).
+        if not embeddings.embeddings_available():
+            QMessageBox.critical(
+                self, "Modeles indispo",
+                "Modeles ONNX CLIP introuvables. Re-clustering impossible."
+            )
+            return
+
+        self._clear_cards()
+        self._empty_lbl.setVisible(False)
+        self.progress.setVisible(True)
+        self.progress.setRange(0, len(self._last_clustered_paths))
+        self.progress_label.setText(f"Re-clusterisation (seuil {new_threshold:.2f})...")
+        self.analyze_btn.setEnabled(False)
+        self._last_used_threshold = new_threshold
+        # Met aussi a jour le slider pour reflet visuel
+        self.sim_slider.setValue(int(new_threshold * 100))
+
+        self._thread = QThread(self)
+        self._worker = ClusterWorker(list(self._last_clustered_paths), threshold=new_threshold)
+        self._worker.moveToThread(self._thread)
+        self._thread.started.connect(self._worker.run)
+        self._worker.progress.connect(self._on_progress)
+        self._worker.finished.connect(self._on_clustering_done)
+        self._worker.failed.connect(self._on_clustering_failed)
+        self._worker.finished.connect(self._thread.quit)
+        self._worker.failed.connect(self._thread.quit)
+        self._thread.start()
+
+    # ==================================================================
     # Bouton global "Deplacer TOUS les groupes nommes"
     # ==================================================================
     def _start_move_all(self) -> None:
@@ -1089,6 +1203,7 @@ class ClusterView(QWidget):
             self._move_all_running = False
             self._move_all_total = 0
             self.move_all_btn.setEnabled(True)
+            self.move_singletons_btn.setEnabled(True)
             # Vide la liste des sources : les fichiers sont deplaces, garder
             # ces chemins n'a aucun sens (et certains pointent vers du vide).
             self._clear_sources()
@@ -1113,6 +1228,65 @@ class ClusterView(QWidget):
             # Petit delai pour laisser le thread precedent se nettoyer proprement
             from PyQt6.QtCore import QTimer
             QTimer.singleShot(100, self._process_next_in_move_all)
+
+    # ==================================================================
+    # Singleton handler : deplacer tous les fichiers isoles dans un album commun
+    # ==================================================================
+    def _move_all_singletons(self) -> None:
+        """Trouve tous les clusters de taille 1 et les deplace ensemble dans
+        un meme dossier (par defaut 'Autres', modifiable par l'user).
+        """
+        singletons = [c for c in self.cards if c.cluster.size == 1]
+        if len(singletons) < 2:
+            QMessageBox.information(
+                self, "Pas d'isoles",
+                "Il n'y a pas (ou plus) d'isoles a regrouper."
+            )
+            return
+
+        # Demande le nom du dossier "Autres"
+        from PyQt6.QtWidgets import QInputDialog
+        name, ok = QInputDialog.getText(
+            self, "Album commun pour les isoles",
+            f"Nom du dossier pour les {len(singletons)} fichier(s) isole(s) :",
+            text="Autres",
+        )
+        if not ok or not name.strip():
+            return
+        folder_name = name.strip()
+
+        # Confirme
+        ans = QMessageBox.question(
+            self, "Deplacer les isoles",
+            f"Deplacer {len(singletons)} fichier(s) isole(s) vers le dossier "
+            f"'{folder_name}' ?\n\nLes groupes a 2+ fichiers ne sont pas touches.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Yes,
+        )
+        if ans != QMessageBox.StandardButton.Yes:
+            return
+
+        # Reutilise la queue _move_all_queue pour traiter les singletons en
+        # sequence (chacun est techniquement un cluster d'1 fichier).
+        if self._move_all_running:
+            QMessageBox.information(
+                self, "Deja en cours",
+                "Un deplacement de masse est deja en cours, patiente."
+            )
+            return
+
+        # Met le nom dans le folder_input de chaque singleton (pour que les
+        # autres mecanismes - autocomplete, etc. - se mettent a jour)
+        for c in singletons:
+            c.folder_input.setText(folder_name)
+
+        queue = [(c.cluster, folder_name) for c in singletons]
+        self._move_all_queue = queue
+        self._move_all_total = len(queue)
+        self._move_all_running = True
+        self.move_singletons_btn.setEnabled(False)
+        self.move_all_btn.setEnabled(False)
+        self._process_next_in_move_all()
 
     def _find_card(self, cluster: Cluster) -> Optional[ClusterCard]:
         for c in self.cards:
@@ -1140,6 +1314,18 @@ class ClusterView(QWidget):
             self._empty_lbl.setVisible(True)
             self._empty_lbl.setText("Tous les groupes ont ete traites.")
             self.move_all_btn.setVisible(False)
+            self.move_singletons_btn.setVisible(False)
         else:
-            self.footer.setText(f"{len(self.cards)} groupe(s) restant(s).")
+            n_singletons = sum(1 for c in self.cards if c.cluster.size == 1)
+            footer_txt = f"{len(self.cards)} groupe(s) restant(s)"
+            if n_singletons:
+                footer_txt += f" — dont {n_singletons} isole(s)"
+            self.footer.setText(footer_txt + ".")
             self.move_all_btn.setVisible(True)
+            # Singleton button : visible seulement s'il y a au moins 2 singletons
+            # (en avoir 1 seul, c'est juste un fichier, pas besoin d'un "album commun")
+            self.move_singletons_btn.setVisible(n_singletons >= 2)
+            if n_singletons >= 2:
+                self.move_singletons_btn.setText(
+                    f"Deplacer les {n_singletons} isoles dans un album commun"
+                )

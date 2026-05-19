@@ -141,14 +141,21 @@ class ThumbnailCard(QFrame):
                 )
                 self.thumb.setPixmap(scaled)
                 return
-        # Fallback : icone + label de type pour les docs
-        icons = {"pdf": "PDF", "docx": "DOC", "xlsx": "XLS", "other": "FILE"}
+        # Fallback : icone + label de type pour les docs / videos
+        icons = {"pdf": "PDF", "docx": "DOC", "xlsx": "XLS", "video": "VIDEO", "other": "FILE"}
         label = icons.get(kind, "?")
         self.thumb.setText(label)
-        self.thumb.setStyleSheet(
-            f"background: {CARD2}; border: 1px solid {BORDER}; border-radius: 4px;"
-            f"color: {ACCENT}; font-size: 28px; font-weight: 800;"
-        )
+        # Style different pour les videos : badge violet pour distinguer
+        if kind == "video":
+            self.thumb.setStyleSheet(
+                f"background: #7c3aed; color: white; border-radius: 4px; "
+                f"font-size: 18px; font-weight: 800;"
+            )
+        else:
+            self.thumb.setStyleSheet(
+                f"background: {CARD2}; border: 1px solid {BORDER}; border-radius: 4px;"
+                f"color: {ACCENT}; font-size: 28px; font-weight: 800;"
+            )
 
     def _on_toggled(self, checked: bool) -> None:
         self.toggled.emit(self.asset, checked)
@@ -427,13 +434,19 @@ class SortFileCard(QFrame):
                 )
                 self.thumb.setPixmap(scaled)
                 return
-        icons = {"pdf": "PDF", "docx": "DOC", "xlsx": "XLS", "other": "FILE"}
+        icons = {"pdf": "PDF", "docx": "DOC", "xlsx": "XLS", "video": "VIDEO", "other": "FILE"}
         label = icons.get(kind, "?")
         self.thumb.setText(label)
-        self.thumb.setStyleSheet(
-            f"background: {CARD2}; border: 1px solid {BORDER}; border-radius: 4px;"
-            f"color: {ACCENT}; font-size: 28px; font-weight: 800;"
-        )
+        if kind == "video":
+            self.thumb.setStyleSheet(
+                f"background: #7c3aed; color: white; border-radius: 4px; "
+                f"font-size: 18px; font-weight: 800;"
+            )
+        else:
+            self.thumb.setStyleSheet(
+                f"background: {CARD2}; border: 1px solid {BORDER}; border-radius: 4px;"
+                f"color: {ACCENT}; font-size: 28px; font-weight: 800;"
+            )
 
     def set_folder(self, folder: str) -> None:
         self.folder = folder
@@ -543,9 +556,10 @@ class SortFileCard(QFrame):
 
 # Couleurs des icones doc-types (pour les placeholders)
 _DOC_COLORS = {
-    "pdf":  ("#dc2626", "PDF"),   # rouge
-    "docx": ("#2563eb", "DOC"),   # bleu
-    "xlsx": ("#16a34a", "XLS"),   # vert
+    "pdf":   ("#dc2626", "PDF"),    # rouge
+    "docx":  ("#2563eb", "DOC"),    # bleu
+    "xlsx":  ("#16a34a", "XLS"),    # vert
+    "video": ("#7c3aed", "VIDEO"),  # violet
 }
 
 ROW_THUMB_SIZE = 64

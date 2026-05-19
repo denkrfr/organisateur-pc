@@ -124,7 +124,7 @@ class DedupView(QWidget):
 
         subtitle = QLabel(
             "Scanne les dossiers pour les doublons exacts et quasi-doublons "
-            "(images + PDF/Word/Excel). 100% local."
+            "(images, videos, PDF/Word/Excel). 100% local."
         )
         subtitle.setProperty("role", "subtitle")
         layout.addWidget(subtitle)

@@ -17,10 +17,11 @@ from typing import Optional
 
 
 DOC_EXTS = {".pdf", ".docx", ".xlsx"}
+VIDEO_EXTS = {".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v", ".3gp", ".wmv", ".flv"}
 
 
 def kind_of(path: Path) -> str:
-    """Retourne 'image', 'pdf', 'docx', 'xlsx' ou 'other'."""
+    """Retourne 'image', 'pdf', 'docx', 'xlsx', 'video' ou 'other'."""
     ext = path.suffix.lower()
     if ext in {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".heic", ".heif", ".tiff", ".tif"}:
         return "image"
@@ -30,6 +31,8 @@ def kind_of(path: Path) -> str:
         return "docx"
     if ext == ".xlsx":
         return "xlsx"
+    if ext in VIDEO_EXTS:
+        return "video"
     return "other"
 
 
