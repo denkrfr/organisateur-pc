@@ -61,3 +61,14 @@ assets/models/clip/vision_model.onnx
 assets/models/clip/text_model.onnx
 assets/models/e5/model.onnx
 assets/models/e5/tokenizer.json
+
+# Release artifacts : les notes sont publiees sur GitHub Releases, pas
+# besoin de les tracker dans le repo. Les ZIPs sont uploades comme assets
+# de release, pas besoin de les commit non plus.
+release_notes_v*.md
+Organisateur-v*.zip
+Organisateur-v*.exe
+
+# Inno Setup config : on a abandonne l'installer pour le ZIP portable.
+installer.iss
+*.iss
