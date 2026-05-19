@@ -55,6 +55,38 @@ class ScanWorker(QObject):
             self.failed.emit(str(e))
 
 
+class TrashWorker(QObject):
+    """Worker thread pour envoyer une liste de fichiers a la corbeille systeme.
+
+    L'operation send2trash peut etre lente (surtout sur HDD ou si beaucoup de
+    fichiers). On la fait dans un thread pour ne pas bloquer l'UI, et on emet
+    un signal de progression pour la barre.
+
+    On ne touche JAMAIS l'UI Qt depuis ce thread : on emet juste des signaux.
+    """
+
+    progress = pyqtSignal(int, int, str)  # done, total, current_file_name
+    finished = pyqtSignal(int, list)      # moved_count, errors
+
+    def __init__(self, paths: list[Path]):
+        super().__init__()
+        self.paths = list(paths)
+
+    def run(self) -> None:
+        moved = 0
+        errors: list[str] = []
+        total = len(self.paths)
+        for i, p in enumerate(self.paths):
+            try:
+                self.progress.emit(i, total, p.name)
+                send2trash(str(p))
+                moved += 1
+            except Exception as e:  # noqa: BLE001
+                errors.append(f"{p.name}: {e}")
+        self.progress.emit(total, total, "")
+        self.finished.emit(moved, errors)
+
+
 # ---------------------------------------------------------------------------
 # Vue principale
 # ---------------------------------------------------------------------------
@@ -421,7 +453,7 @@ class DedupView(QWidget):
         )
 
     # ------------------------------------------------------------------
-    # Action corbeille
+    # Action corbeille (via worker thread + retour accueil quand fini)
     # ------------------------------------------------------------------
     def _send_checked_to_trash(self) -> None:
         checked = self._all_checked()
@@ -442,64 +474,57 @@ class DedupView(QWidget):
         if ans != QMessageBox.StandardButton.Yes:
             return
 
-        # === Phase 1 : send2trash (operation systeme) ===
-        moved = 0
-        errors: list[str] = []
-        removed_per_row: dict[object, list[Asset]] = {}
-        for row, asset in checked:
-            try:
-                send2trash(str(asset.path))
-                removed_per_row.setdefault(row, []).append(asset)
-                moved += 1
-            except Exception as e:  # noqa: BLE001 — OSError ou autre
-                errors.append(f"{asset.path.name}: {e}")
+        # Worker thread : on ne fait JAMAIS d'UI update au milieu de la boucle.
+        # Quand le worker emet finished, on affiche le message + retour accueil.
+        paths = [a.path for _, a in checked]
 
-        # === Phase 2 : mise a jour de l'UI (en mode safe) ===
-        # On bloque tous les signaux pendant la manipulation pour eviter qu'une
-        # checkbox emette un toggled sur un widget en cours de destruction.
-        try:
-            for row, removed_assets in removed_per_row.items():
-                # Retire les assets supprimes des items du groupe
-                for a in removed_assets:
-                    if a in row.group.items:
-                        row.group.items.remove(a)
-                # Reset les checks pour aligner avec la nouvelle liste d'items
-                row._file_checks = [False] * len(row.group.items)
-                # Rerender les fichiers du row si > 1 item restant
-                if len(row.group.items) >= 2:
-                    if row._is_small:
-                        row._render_files_inline()
-                    elif row._expanded:
-                        row._render_files(collapsed=False)
-                    else:
-                        row._render_files(collapsed=True)
+        # Desactive tous les boutons d'action pendant l'operation
+        self.trash_btn.setEnabled(False)
+        self.scan_btn.setEnabled(False)
 
-            # Retire les groupes qui n'ont plus que 0 ou 1 fichier
-            for row in list(self.group_rows):
-                if len(row.group.items) < 2:
-                    try:
-                        self._results_layout.removeWidget(row)
-                        row.setParent(None)  # detache avant deleteLater
-                        row.deleteLater()
-                    except Exception:  # noqa: BLE001
-                        pass
-                    self.group_rows.remove(row)
-            self.groups_badge.setText(f"{len(self.group_rows)} groupes")
-            self._update_footer()
-        except Exception as e:  # noqa: BLE001 — proteger l'UI d'un crash total
-            QMessageBox.warning(
-                self, "Suppression OK mais probleme UI",
-                f"Les fichiers ont ete envoyes a la corbeille mais l'UI a eu un "
-                f"souci : {e}. Tu peux relancer un scan pour rafraichir.",
-            )
-            return
+        # Affiche la barre de progression
+        self.progress_bar.setVisible(True)
+        self.progress_bar.setRange(0, len(paths))
+        self.progress_bar.setValue(0)
+        self.progress_label.setText(f"Envoi a la corbeille : 0 / {len(paths)}")
 
-        # === Phase 3 : feedback final ===
-        msg = f"{moved} fichier(s) envoyes a la corbeille."
+        # Demarre le worker
+        self._trash_thread = QThread()
+        self._trash_worker = TrashWorker(paths)
+        self._trash_worker.moveToThread(self._trash_thread)
+        self._trash_thread.started.connect(self._trash_worker.run)
+        self._trash_worker.progress.connect(self._on_trash_progress)
+        self._trash_worker.finished.connect(self._on_trash_finished)
+        self._trash_worker.finished.connect(self._trash_thread.quit)
+        self._trash_worker.finished.connect(self._trash_worker.deleteLater)
+        self._trash_thread.finished.connect(self._trash_thread.deleteLater)
+        self._trash_thread.start()
+
+    def _on_trash_progress(self, done: int, total: int, current: str) -> None:
+        self.progress_bar.setValue(done)
+        if current:
+            self.progress_label.setText(f"Envoi a la corbeille : {done} / {total} — {current}")
+        else:
+            self.progress_label.setText(f"Envoi a la corbeille : {done} / {total}")
+
+    def _on_trash_finished(self, moved: int, errors: list) -> None:
+        # On masque la barre + reactive les boutons AVANT de toucher les widgets
+        # de resultats (le _back_to_setup les detruit, et on veut etre sur que
+        # plus aucun signal n'arrive a un widget mort).
+        self.progress_bar.setVisible(False)
+        self.progress_label.setText("")
+        self.trash_btn.setEnabled(True)
+        self.scan_btn.setEnabled(True)
+
+        # Message de confirmation
+        msg = f"[FINI] {moved} fichier(s) envoyes a la corbeille."
         if errors:
-            msg += "\n\nErreurs :\n" + "\n".join(errors[:10])
+            msg += f"\n\n{len(errors)} erreur(s) :\n" + "\n".join(errors[:10])
+            if len(errors) > 10:
+                msg += f"\n... et {len(errors) - 10} autres."
         QMessageBox.information(self, "Termine", msg)
-        self._update_footer()
-        if not self.group_cards:
-            self._empty_lbl.setVisible(True)
-            self._empty_lbl.setText("Aucun doublon restant.")
+
+        # Retour ecran d'accueil (efface tous les groupes affiches sans toucher
+        # aux fichiers sur disque). C'est l'approche la plus robuste : on ne
+        # touche pas a l'UI en place, on rebuilde un etat propre.
+        self._back_to_setup()

@@ -787,6 +787,8 @@ class ClusterView(QWidget):
             self._empty_lbl.setVisible(True)
             self._empty_lbl.setText("Aucun groupe forme.")
             self.footer.setText("0 groupe")
+            self.progress_label.setText("[FINI] Aucun groupe forme.")
+            QMessageBox.information(self, "Analyse terminee", "[FINI]\n\nAucun groupe n'a ete forme.")
             return
         known = [f for f, _ in sort.load_known_folders()]
         if embeddings.embeddings_available():
@@ -798,7 +800,15 @@ class ClusterView(QWidget):
         self._known_folders_cache = known
         self._render_next_cluster_page()
         self.footer.setText(f"{len(self._pending_clusters)} groupe(s) formes au total.")
-        self.progress_label.setText(f"Termine : {len(self._pending_clusters)} groupes.")
+        n = len(self._pending_clusters)
+        self.progress_label.setText(f"[FINI] {n} groupe(s) formes — choisis un nom et clique Deplacer pour chaque.")
+        # Message popup pour confirmer la fin de l'analyse
+        QMessageBox.information(
+            self, "Analyse terminee",
+            f"[FINI]\n\n{n} groupe(s) formes.\n\n"
+            "Pour chaque groupe : tape un nom de dossier et clique Deplacer. "
+            "Quand t'as fini, clique Retour pour effacer et relancer une analyse."
+        )
         # Affiche le bouton Retour si on a effectivement des groupes
         if self._pending_clusters:
             self.back_btn.setVisible(True)
