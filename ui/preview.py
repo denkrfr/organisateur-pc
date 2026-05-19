@@ -29,18 +29,69 @@ from .styles import fmt_size
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+# Limites pour eviter les segfaults / OOM lors du chargement des thumbnails
+_THUMB_MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024  # 25 Mo : au-dela, on ne charge pas
+# Extensions qu'on peut decoder NATIVEMENT via Qt (plus stable que Pillow,
+# car pas d'allocation ImageQt / conversion Pillow->Qt qui peut segfaulter).
+_QT_NATIVE_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".gif"}
+# Extensions qu'on ne tente meme pas (HEIC necessite pillow-heif qui peut
+# planter sur certains fichiers ; on prefere afficher pas-de-vignette plutot
+# qu'un crash).
+_THUMB_SKIP_EXTS = {".heic", ".heif"}
+
+
 def load_thumbnail(path: Path, max_size: tuple[int, int] = (1024, 1024)) -> Optional[QPixmap]:
-    """Charge une image et rend un QPixmap. La taille max_size sert juste
-    de plafond pour ne pas exploser la RAM sur une image 50 MP. Le rescale
-    final au widget se fait separement (au `setPixmap`/resize) depuis ce
-    pixmap, sans retoucher au disque."""
+    """Charge une image et rend un QPixmap. Robuste aux fichiers corrompus.
+
+    Strategie :
+      1. Verifie la taille du fichier ; au-dela de 25 Mo, on skip (risque OOM
+         et le rendu serait scale a 96x96 de toute facon).
+      2. Pour les formats natifs Qt (jpg/png/bmp/gif), utilise QImageReader
+         qui est plus stable que Pillow + ImageQt (moins de risques de
+         segfault au niveau C).
+      3. Fallback Pillow pour les formats moins courants (webp, tiff).
+      4. HEIC : skip pur et simple (pas de codec stable embarque).
+      5. Toute exception (y compris MemoryError) -> None, pas de crash.
+
+    max_size sert de plafond pour ne pas exploser la RAM.
+    """
+    # Filtre 1 : taille du fichier
+    try:
+        if path.stat().st_size > _THUMB_MAX_FILE_SIZE_BYTES:
+            return None
+    except OSError:
+        return None
+
+    suffix = path.suffix.lower()
+
+    # Filtre 2 : extensions a ne pas tenter
+    if suffix in _THUMB_SKIP_EXTS:
+        return None
+
+    # Voie rapide : decodeur natif Qt (stable, pas de Pillow)
+    if suffix in _QT_NATIVE_EXTS:
+        try:
+            from PyQt6.QtCore import QSize
+            from PyQt6.QtGui import QImageReader
+            reader = QImageReader(str(path))
+            # Demande a Qt de pre-scale au chargement (gros gain de RAM
+            # pour les grosses photos)
+            reader.setScaledSize(QSize(max_size[0], max_size[1]))
+            reader.setAutoTransform(True)  # respecte EXIF orientation
+            img = reader.read()
+            if not img.isNull():
+                return QPixmap.fromImage(img)
+        except Exception:  # noqa: BLE001
+            pass  # bascule sur Pillow
+
+    # Voie lente : Pillow (webp, tiff, png anime, etc.)
     try:
         with Image.open(path) as img:
             img = img.convert("RGBA")
             img.thumbnail(max_size, Image.Resampling.LANCZOS)
             qimg = ImageQt(img).copy()  # copy pour eviter le GC Pillow
         return QPixmap.fromImage(qimg)
-    except Exception:  # noqa: BLE001
+    except (Exception, MemoryError):  # noqa: BLE001
         return None
 
 

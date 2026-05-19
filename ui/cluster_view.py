@@ -203,30 +203,29 @@ class ClusterContentsDialog(QDialog):
         none_btn.clicked.connect(self._uncheck_all)
         quick.addWidget(none_btn)
         quick.addStretch()
-        self.count_lbl = QLabel(f"{cluster.size} / {cluster.size} coches")
+        self.count_lbl = QLabel(f"{self.cluster.size} / {self.cluster.size} coches")
         self.count_lbl.setStyleSheet(f"color: {TEXT}; font-size: 11px;")
         quick.addWidget(self.count_lbl)
         layout.addLayout(quick)
 
-        # Liste scrollable de fichiers
+        # Liste scrollable de fichiers : on construit d'abord SANS thumbnails
+        # (instantane), puis on les charge en deferred via QTimer pour eviter
+        # de bloquer/crasher si un fichier pose probleme. Le dialog s'ouvre
+        # immediatement et les vignettes apparaissent une par une.
         self.list_widget = QListWidget()
         self.list_widget.setIconSize(QSize(48, 48))
         self.list_widget.setSpacing(2)
-        for p in self.cluster.items:
+        self._items_to_load: list[tuple[int, Path]] = []
+        for i, p in enumerate(self.cluster.items):
             item = QListWidgetItem(f"  {p.name}")
             item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
             item.setCheckState(Qt.CheckState.Checked)
             item.setToolTip(str(p))
             item.setData(Qt.ItemDataRole.UserRole, p)
-            # Thumbnail comme icon
-            from PyQt6.QtGui import QIcon
-            from .preview import load_thumbnail
+            self.list_widget.addItem(item)
             kind = docs.kind_of(p)
             if kind == "image":
-                pm = load_thumbnail(p, max_size=(96, 96))
-                if pm is not None:
-                    item.setIcon(QIcon(pm))
-            self.list_widget.addItem(item)
+                self._items_to_load.append((i, p))
         self.list_widget.itemChanged.connect(self._on_item_toggled)
         layout.addWidget(self.list_widget, stretch=1)
 
@@ -237,6 +236,35 @@ class ClusterContentsDialog(QDialog):
         btns.accepted.connect(self.accept)
         btns.rejected.connect(self.reject)
         layout.addWidget(btns)
+
+        # Demarre le chargement deferred des thumbnails apres l'ouverture du
+        # dialog. QTimer.singleShot(0) = a la prochaine boucle d'event, donc
+        # le dialog est deja visible et reactif.
+        from PyQt6.QtCore import QTimer
+        QTimer.singleShot(0, self._load_next_thumbnail)
+
+    def _load_next_thumbnail(self) -> None:
+        """Charge la prochaine thumbnail de la queue. Auto-rappele jusqu'a
+        epuisement de la queue. Chaque load est wrappe en try/except : si
+        un fichier crashe, on saute juste celui-la, le dialog continue.
+        """
+        if not self._items_to_load:
+            return
+        idx, path = self._items_to_load.pop(0)
+        try:
+            from PyQt6.QtGui import QIcon
+            from .preview import load_thumbnail
+            pm = load_thumbnail(path, max_size=(96, 96))
+            if pm is not None:
+                item = self.list_widget.item(idx)
+                if item is not None:
+                    item.setIcon(QIcon(pm))
+        except Exception:  # noqa: BLE001
+            pass  # fichier corrompu, on ignore et on continue avec le suivant
+        # Programme le suivant (cede le controle a l'event loop entre chaque)
+        if self._items_to_load:
+            from PyQt6.QtCore import QTimer
+            QTimer.singleShot(0, self._load_next_thumbnail)
 
     def _check_all(self) -> None:
         for i in range(self.list_widget.count()):
