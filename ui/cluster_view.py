@@ -322,9 +322,9 @@ class ClusterCard(QFrame):
             f"font-weight: 800; font-size: 13px;"
         )
         head.addWidget(badge)
-        info = QLabel(f"{cluster.size} fichier{'s' if cluster.size > 1 else ''}  ·  {fmt_size(cluster.total_bytes)}")
-        info.setStyleSheet(f"color: {TEXT}; font-weight: 600; font-size: 13px;")
-        head.addWidget(info)
+        self._count_label = QLabel(f"{cluster.size} fichier{'s' if cluster.size > 1 else ''}  ·  {fmt_size(cluster.total_bytes)}")
+        self._count_label.setStyleSheet(f"color: {TEXT}; font-weight: 600; font-size: 13px;")
+        head.addWidget(self._count_label)
         head.addStretch()
         # Type badge
         type_lbl = QLabel(cluster.kind.upper())
@@ -375,18 +375,20 @@ class ClusterCard(QFrame):
         preview.setMaximumHeight(16)
         outer.addWidget(preview)
 
-        # Bouton textuel evident pour ouvrir le dialog avec checkboxes individuelles
+        # Bouton secondaire discret : ouvre le dialog de tri fin du cluster
+        self._see_btn = None
         if cluster.size > 1:
-            see_full_btn = QPushButton(f"Voir / Modifier la selection ({cluster.size} fichiers)")
-            see_full_btn.setStyleSheet(
-                f"background: {ACCENT}; color: white; padding: 8px 14px; "
-                f"border-radius: 5px; font-weight: 700; font-size: 12px;"
+            self._see_btn = QPushButton(f"Voir / decocher les intrus ({cluster.size} fichiers)")
+            self._see_btn.setProperty("role", "secondary")
+            self._see_btn.setStyleSheet(
+                f"color: {TEXT2}; background: transparent; border: 1px solid {BORDER}; "
+                f"border-radius: 4px; padding: 4px 10px; font-size: 11px;"
             )
-            see_full_btn.setToolTip("Voir tous les fichiers + cocher/decocher individuellement")
-            see_full_btn.clicked.connect(self._open_contents_dialog)
-            outer.addWidget(see_full_btn)
+            self._see_btn.setToolTip("Optionnel : voir tous les fichiers et decocher ceux qui n'ont rien a faire la")
+            self._see_btn.clicked.connect(self._open_contents_dialog)
+            outer.addWidget(self._see_btn)
 
-        # Input + bouton
+        # Input + bouton (Deplacer est le bouton PRIMAIRE, bien visible)
         action = QHBoxLayout()
         action.addWidget(QLabel("Nom du dossier :"))
         self.folder_input = QLineEdit()
@@ -399,26 +401,41 @@ class ClusterCard(QFrame):
             f"border-radius: 4px; padding: 6px 10px;"
         )
         # Autocomplete sur dossiers deja utilises
-        completer = QCompleter(known_folders, self.folder_input)
-        completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
-        completer.setFilterMode(Qt.MatchFlag.MatchContains)
-        self.folder_input.setCompleter(completer)
+        self._completer = QCompleter(known_folders, self.folder_input)
+        self._completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        self._completer.setFilterMode(Qt.MatchFlag.MatchContains)
+        self.folder_input.setCompleter(self._completer)
         self.folder_input.returnPressed.connect(self._on_move_clicked)
         action.addWidget(self.folder_input, stretch=1)
 
+        # Bouton primaire bien visible : c'est l'action principale d'un cluster
         self.move_btn = QPushButton("Deplacer ce groupe")
+        self.move_btn.setStyleSheet(
+            f"background: {ACCENT}; color: white; padding: 8px 14px; "
+            f"border-radius: 5px; font-weight: 700; font-size: 12px;"
+        )
+        self.move_btn.setToolTip("Cree le dossier (si necessaire) et y deplace tous les fichiers du groupe")
         self.move_btn.clicked.connect(self._on_move_clicked)
         action.addWidget(self.move_btn)
 
         self.skip_btn = QPushButton("Ignorer")
         self.skip_btn.setProperty("role", "secondary")
+        self.skip_btn.setStyleSheet(
+            f"color: {TEXT2}; background: transparent; border: 1px solid {BORDER}; "
+            f"border-radius: 4px; padding: 6px 10px;"
+        )
         self.skip_btn.clicked.connect(self._on_skip_clicked)
         action.addWidget(self.skip_btn)
 
         outer.addLayout(action)
 
     def _open_contents_dialog(self) -> None:
-        """Ouvre la liste complete du cluster pour voir/decocher."""
+        """Ouvre la liste complete du cluster pour voir/decocher.
+
+        Pas de popup confus apres validation : on met juste a jour le compteur
+        de fichiers de la card silencieusement. L'user voit le nouveau total
+        et peut directement cliquer Deplacer.
+        """
         dlg = ClusterContentsDialog(self.cluster, self)
         if dlg.exec() == QDialog.DialogCode.Accepted:
             kept = dlg.kept_paths()
@@ -427,11 +444,15 @@ class ClusterCard(QFrame):
                 return
             # Modifie le cluster sur place pour ne garder que les fichiers coches
             self.cluster.items = kept
-            # Force le re-render visuel (mise a jour du compteur)
-            QMessageBox.information(
-                self, "Mise a jour",
-                f"Groupe filtre : {len(kept)} fichier(s) conserve(s). Re-lance Analyser ou clique Deplacer pour appliquer."
-            )
+            # Met a jour le compteur affiche sur la card (si on a un label dedie)
+            if hasattr(self, "_count_label") and self._count_label is not None:
+                self._count_label.setText(
+                    f"{len(kept)} fichier{'s' if len(kept) > 1 else ''}  ·  "
+                    f"{fmt_size(sum(p.stat().st_size for p in kept if p.exists()))}"
+                )
+            # Met a jour le texte du bouton "Voir / decocher" aussi
+            if hasattr(self, "_see_btn") and self._see_btn is not None:
+                self._see_btn.setText(f"Voir / decocher les intrus ({len(kept)} fichiers)")
 
     def _on_move_clicked(self) -> None:
         name = self.folder_input.text().strip()
@@ -448,6 +469,20 @@ class ClusterCard(QFrame):
         self.move_btn.setEnabled(not busy)
         self.skip_btn.setEnabled(not busy)
         self.folder_input.setEnabled(not busy)
+
+    def update_known_folders(self, folders: list[str]) -> None:
+        """Mets a jour la liste des dossiers proposes en autocomplete.
+
+        Appele apres qu'un autre cluster ait ete deplace, pour que son nom
+        de dossier devienne immediatement disponible en suggestion ici.
+        """
+        from PyQt6.QtCore import QStringListModel
+        if hasattr(self, "_completer") and self._completer is not None:
+            model = self._completer.model()
+            if isinstance(model, QStringListModel):
+                model.setStringList(folders)
+            else:
+                self._completer.setModel(QStringListModel(folders, self._completer))
 
 
 # ---------------------------------------------------------------------------
@@ -652,10 +687,32 @@ class ClusterView(QWidget):
         self.scroll.setWidget(self._container)
         layout.addWidget(self.scroll, stretch=1)
 
+        # Bottom bar : action globale "Deplacer tous les groupes nommes"
+        bottom = QHBoxLayout()
+        bottom.addStretch()
+        self.move_all_btn = QPushButton("Deplacer TOUS les groupes nommes")
+        self.move_all_btn.setStyleSheet(
+            f"background: {OK}; color: black; padding: 8px 18px; "
+            f"border-radius: 5px; font-weight: 800; font-size: 12px;"
+        )
+        self.move_all_btn.setToolTip(
+            "Deplace en sequence chaque groupe pour lequel tu as tape un nom "
+            "de dossier. Les groupes sans nom sont ignores."
+        )
+        self.move_all_btn.clicked.connect(self._start_move_all)
+        self.move_all_btn.setVisible(False)  # n'apparait que quand y a des clusters
+        bottom.addWidget(self.move_all_btn)
+        layout.addLayout(bottom)
+
         # Footer
         self.footer = QLabel("0 groupe")
         self.footer.setStyleSheet(f"color: {TEXT2}; font-size: 11px;")
         layout.addWidget(self.footer)
+
+        # Etat interne pour la queue "Deplacer tout"
+        self._move_all_queue: list = []
+        self._move_all_total: int = 0
+        self._move_all_running: bool = False
 
     # ==================================================================
     def _add_files(self) -> None:
@@ -840,6 +897,7 @@ class ClusterView(QWidget):
         # Affiche le bouton Retour si on a effectivement des groupes
         if self._pending_clusters:
             self.back_btn.setVisible(True)
+            self.move_all_btn.setVisible(True)
 
     def _back_to_setup(self) -> None:
         """Efface les groupes et revient a l'etat initial de selection."""
@@ -856,6 +914,7 @@ class ClusterView(QWidget):
         self.progress_label.setText("")
         self.footer.setText("0 groupe")
         self.back_btn.setVisible(False)
+        self.move_all_btn.setVisible(False)
 
     def _render_next_cluster_page(self) -> None:
         """Rend la prochaine page de clusters. Anti-OOM."""
@@ -943,9 +1002,30 @@ class ClusterView(QWidget):
             self.progress_label.setText(
                 f"Deplace : {moved} fichiers, l'app a appris {learned} exemple(s)."
             )
+
+        # Recupere le nom du dossier ou ce cluster a ete deplace (avant suppression)
+        moved_folder_name: str | None = None
+        card = self._find_card(cluster)
+        if card is not None:
+            moved_folder_name = card.folder_input.text().strip()
+
         # Retire la carte du cluster traite
         self._remove_card_for_cluster(cluster)
         self._update_footer()
+
+        # Ajoute le dossier aux suggestions de TOUTES les autres cards : comme
+        # ca le nom apparait en autocomplete immediatement pour les autres
+        # groupes (avant on devait relancer Analyser).
+        if moved_folder_name and moved_folder_name not in self._known_folders_cache:
+            self._known_folders_cache = sorted(set(self._known_folders_cache) | {moved_folder_name})
+            for c in self.cards:
+                try:
+                    c.update_known_folders(self._known_folders_cache)
+                except Exception:  # noqa: BLE001
+                    pass  # une card vieille / detruite, on ignore
+
+        # Si plus aucun cluster, on continue la queue "Deplacer tout" eventuelle
+        self._continue_move_all_if_running()
 
     def _cleanup_move_thread(self) -> None:
         if self._move_worker is not None:
@@ -954,6 +1034,79 @@ class ClusterView(QWidget):
         if self._move_thread is not None:
             self._move_thread.deleteLater()
             self._move_thread = None
+
+    # ==================================================================
+    # Bouton global "Deplacer TOUS les groupes nommes"
+    # ==================================================================
+    def _start_move_all(self) -> None:
+        """Construit la queue des clusters a deplacer et lance le 1er.
+
+        Inclut uniquement les clusters dont le folder_input n'est pas vide.
+        Les autres sont laisses tels quels (l'user devra les traiter / skipper
+        a la main).
+        """
+        if self._move_all_running:
+            QMessageBox.information(
+                self, "Deja en cours",
+                "Le deplacement de masse est deja en cours, patiente."
+            )
+            return
+        queue: list = []
+        for c in list(self.cards):
+            name = c.folder_input.text().strip()
+            if name:
+                queue.append((c.cluster, name))
+        if not queue:
+            QMessageBox.information(
+                self, "Aucun groupe nomme",
+                "Aucun groupe n'a de nom de dossier saisi. Tape un nom dans au "
+                "moins un groupe avant de lancer 'Deplacer TOUS'."
+            )
+            return
+        # Confirmation
+        ans = QMessageBox.question(
+            self, "Confirmation",
+            f"Deplacer {len(queue)} groupe(s) maintenant ?\n\n"
+            f"Les groupes seront traites en sequence, un par un. "
+            f"Tu peux suivre la progression dans la barre.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Yes,
+        )
+        if ans != QMessageBox.StandardButton.Yes:
+            return
+        self._move_all_queue = queue
+        self._move_all_total = len(queue)
+        self._move_all_running = True
+        self.move_all_btn.setEnabled(False)
+        self._process_next_in_move_all()
+
+    def _process_next_in_move_all(self) -> None:
+        """Depile et lance le prochain move de la queue. Si vide, finit."""
+        if not self._move_all_queue:
+            # Termine
+            done = self._move_all_total
+            self._move_all_running = False
+            self._move_all_total = 0
+            self.move_all_btn.setEnabled(True)
+            QMessageBox.information(
+                self, "Termine",
+                f"[FINI] {done} groupe(s) deplaces."
+            )
+            return
+        cluster, name = self._move_all_queue.pop(0)
+        progress_idx = self._move_all_total - len(self._move_all_queue)
+        self.progress_label.setText(
+            f"Deplacement {progress_idx} / {self._move_all_total} : {name}..."
+        )
+        # Re-utilise le flux normal d'un seul move
+        self._on_move_requested(cluster, name)
+
+    def _continue_move_all_if_running(self) -> None:
+        """Appele depuis _on_cluster_moved pour enchainer si on est en mode 'tout'."""
+        if self._move_all_running:
+            # Petit delai pour laisser le thread precedent se nettoyer proprement
+            from PyQt6.QtCore import QTimer
+            QTimer.singleShot(100, self._process_next_in_move_all)
 
     def _find_card(self, cluster: Cluster) -> Optional[ClusterCard]:
         for c in self.cards:
@@ -980,5 +1133,7 @@ class ClusterView(QWidget):
             self.footer.setText("Tous les groupes traites.")
             self._empty_lbl.setVisible(True)
             self._empty_lbl.setText("Tous les groupes ont ete traites.")
+            self.move_all_btn.setVisible(False)
         else:
             self.footer.setText(f"{len(self.cards)} groupe(s) restant(s).")
+            self.move_all_btn.setVisible(True)
