@@ -500,8 +500,13 @@ class ClusterCard(QFrame):
 # Vue principale
 # ---------------------------------------------------------------------------
 SUPPORTED_EXTS = {
+    # Images : CLIP genere des embeddings visuels
     ".jpg", ".jpeg", ".png", ".bmp", ".webp", ".heic", ".tiff", ".tif", ".gif",
+    # Documents : E5 genere des embeddings textuels (texte extrait)
     ".pdf", ".docx", ".xlsx",
+    # Videos : pas d'embedding possible, finiront en singletons 'other' mais
+    # apparaitront dans la liste de groupes (l'user peut les deplacer manuellement)
+    ".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v", ".3gp", ".wmv", ".flv",
 }
 
 # Filtres : ignore les fichiers qui sont quasi-surement pas des contenus user
@@ -597,9 +602,19 @@ class ClusterView(QWidget):
         src_box.addWidget(self.sources_list, stretch=1)
         src_btns = QVBoxLayout()
         add_files_btn = QPushButton(t("sort.add_files"))
+        add_files_btn.setToolTip(
+            "Selectionne manuellement des fichiers specifiques.\n"
+            "ATTENTION : Windows limite la selection multiple a ~100-200 fichiers.\n"
+            "Pour les gros volumes, utilise plutot 'Ajouter dossier'."
+        )
         add_files_btn.clicked.connect(self._add_files)
         src_btns.addWidget(add_files_btn)
         add_dir_btn = QPushButton(t("sort.add_dir"))
+        add_dir_btn.setToolTip(
+            "Ajoute un dossier entier. Tous les fichiers supportes (images, "
+            "videos, PDF/Word/Excel) seront aspires.\n"
+            "Recommande pour gros volumes — pas de limite Windows."
+        )
         add_dir_btn.clicked.connect(self._add_dir)
         src_btns.addWidget(add_dir_btn)
         rm_btn = QPushButton(t("sort.remove"))
@@ -735,19 +750,61 @@ class ClusterView(QWidget):
         self._move_all_total: int = 0
         self._move_all_running: bool = False
 
-    # ==================================================================
     def _add_files(self) -> None:
+        # Filtre "Tous les fichiers" en premier : evite que le picker filtre
+        # silencieusement les .heic ou autres formats par defaut.
         files, _ = QFileDialog.getOpenFileNames(
             self, "Ajouter des fichiers a trier",
-            "", "Fichiers supportes (*.jpg *.jpeg *.png *.bmp *.webp *.heic *.tiff *.gif *.pdf *.docx *.xlsx);;Tous les fichiers (*)"
+            "",
+            "Tous les fichiers (*);;Fichiers supportes (*.jpg *.jpeg *.png *.bmp *.webp *.heic *.tiff *.gif *.pdf *.docx *.xlsx *.mp4 *.mov *.mkv *.avi *.webm)"
         )
         if not files:
             return
+
+        # Diagnostic : on compte ce que Qt nous donne vs ce qu'on ajoute
+        n_returned_by_qt = len(files)
+        n_added = 0
+        n_already_in_list = 0
+        n_path_error = 0
+        examples_skipped: list[str] = []
+
         for f in files:
-            p = Path(f)
-            if p not in self.sources:
-                self.sources.append(p)
-                QListWidgetItem(f"[fichier] {p.name}    -    {p.parent}", self.sources_list)
+            try:
+                p = Path(f)
+            except Exception:  # noqa: BLE001
+                n_path_error += 1
+                continue
+            if p in self.sources:
+                n_already_in_list += 1
+                if len(examples_skipped) < 3:
+                    examples_skipped.append(p.name)
+                continue
+            self.sources.append(p)
+            QListWidgetItem(f"[fichier] {p.name}    -    {p.parent}", self.sources_list)
+            n_added += 1
+
+        # Si y a une perte (Qt a renvoye moins ou on a deduplique), on previent
+        # l'user avec un message clair. Sinon, silencieux.
+        n_lost = n_returned_by_qt - n_added
+        if n_lost > 0:
+            details = []
+            if n_already_in_list > 0:
+                ex = ", ".join(examples_skipped)
+                details.append(f"• {n_already_in_list} deja dans la liste (ex: {ex})")
+            if n_path_error > 0:
+                details.append(f"• {n_path_error} avec un chemin invalide")
+            details_txt = "\n".join(details) if details else "(cause inconnue)"
+            QMessageBox.information(
+                self,
+                "Quelques fichiers ignores",
+                f"Windows m'a envoye {n_returned_by_qt} fichier(s), "
+                f"j'en ai ajoute {n_added} a la liste.\n\n"
+                f"Les {n_lost} restant(s) ont ete ignores :\n{details_txt}\n\n"
+                f"Si t'attendais plus de fichiers que ce que Windows m'a envoye, "
+                f"c'est probablement que Windows a tronque la selection multiple "
+                f"(buffer interne limite). Pour les gros volumes, utilise plutot "
+                f"'Ajouter dossier...'."
+            )
 
     def _add_dir(self) -> None:
         folder = QFileDialog.getExistingDirectory(self, "Ajouter un dossier a trier")
@@ -798,14 +855,21 @@ class ClusterView(QWidget):
         candidates: list[Path] = []
         for s in self.sources:
             if s.is_file():
+                # Fichier ajoute explicitement par l'user : on l'inclut toujours
+                # (meme si extension exotique). cluster_files le mettra en
+                # singleton 'other' si pas d'embedding possible.
                 candidates.append(s)
             elif s.is_dir():
                 if self.recursive_cb.isChecked():
-                    candidates.extend(p for p in s.rglob("*") if p.is_file())
+                    src_files = [p for p in s.rglob("*") if p.is_file()]
                 else:
-                    candidates.extend(p for p in s.iterdir() if p.is_file())
-        # Filtre par extension supportee
-        candidates = [p for p in candidates if p.suffix.lower() in SUPPORTED_EXTS]
+                    src_files = [p for p in s.iterdir() if p.is_file()]
+                # Pour les dossiers, on filtre par extensions supportees pour
+                # eviter d'aspirer des centaines de fichiers systeme/programmes.
+                # L'user peut ajouter explicitement un fichier exotique via
+                # 'Ajouter fichiers...' s'il en veut un specifique.
+                src_files = [p for p in src_files if p.suffix.lower() in SUPPORTED_EXTS]
+                candidates.extend(src_files)
         # Deduplication (au cas ou)
         seen = set()
         unique = []
