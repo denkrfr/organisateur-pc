@@ -55,6 +55,52 @@ class ScanWorker(QObject):
             self.failed.emit(str(e))
 
 
+def _normalize_path_for_trash(p: Path) -> str:
+    """Normalise un Path en str pour send2trash sur Windows.
+
+    Probleme observe : sur certains paths (long, ou avec caracteres non-ASCII
+    type coreen/chinois/etc.), pathlib produit une string avec le prefix
+    extended-length '\\\\?\\' que send2trash ne gere pas bien. On le strip si
+    present.
+
+    Sans changement pour les paths normaux (la grande majorite).
+    """
+    s = str(p)
+    # Le prefix extended-length Windows : \\?\C:\...
+    # On le strip pour donner a send2trash le chemin classique C:\...
+    if s.startswith("\\\\?\\"):
+        s = s[4:]
+    return s
+
+
+def _send_to_trash_robust(p: Path) -> None:
+    r"""send2trash mais avec fallback si la 1ere tentative echoue.
+
+    Strategy :
+      1. Strip le prefix \\?\ si present, essaie send2trash
+      2. Si echoue ET que le path existe encore, retente avec le path resolu
+         (resolve() = normalise les symlinks, remplace . et .., etc.)
+      3. Si tout echoue, leve l'exception originale
+    """
+    normalized = _normalize_path_for_trash(p)
+    try:
+        send2trash(normalized)
+        return
+    except (OSError, Exception) as first_err:  # noqa: BLE001
+        # Fallback : essaie avec path resolved si le fichier existe encore
+        try:
+            if p.exists():
+                resolved = str(p.resolve())
+                if resolved.startswith("\\\\?\\"):
+                    resolved = resolved[4:]
+                send2trash(resolved)
+                return
+        except Exception:  # noqa: BLE001
+            pass
+        # Tous les fallbacks ont echoue : relance l'erreur originale
+        raise first_err
+
+
 class TrashWorker(QObject):
     """Worker thread pour envoyer une liste de fichiers a la corbeille systeme.
 
@@ -79,7 +125,7 @@ class TrashWorker(QObject):
         for i, p in enumerate(self.paths):
             try:
                 self.progress.emit(i, total, p.name)
-                send2trash(str(p))
+                _send_to_trash_robust(p)
                 moved += 1
             except Exception as e:  # noqa: BLE001
                 errors.append(f"{p.name}: {e}")
