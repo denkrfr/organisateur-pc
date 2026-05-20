@@ -192,7 +192,7 @@ class _ClickableLabel(QLabel):
         super().__init__(parent)
         self._path = path
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setToolTip("Cliquer pour ouvrir avec l'app par defaut")
+        self.setToolTip(t("rc.click_to_open"))
 
     def mousePressEvent(self, ev: QMouseEvent) -> None:  # noqa: N802
         if ev.button() == Qt.MouseButton.LeftButton:
@@ -210,9 +210,8 @@ class _ClickableLabel(QLabel):
                 # Fichier supprime entre-temps (envoye a la corbeille par ex)
                 from PyQt6.QtWidgets import QMessageBox
                 QMessageBox.warning(
-                    None, "Fichier introuvable",
-                    f"Le fichier n'existe plus :\n{self._path.name}\n\n"
-                    "Il a peut-etre ete deplace, renomme ou envoye a la corbeille."
+                    None, t("rc.file_not_found_title"),
+                    t("rc.file_not_found_body", name=self._path.name)
                 )
                 return
             ok = QDesktopServices.openUrl(QUrl.fromLocalFile(str(self._path)))
@@ -220,10 +219,8 @@ class _ClickableLabel(QLabel):
                 # Windows n'a pas pu ouvrir (pas d'app associee a l'extension, etc.)
                 from PyQt6.QtWidgets import QMessageBox
                 QMessageBox.information(
-                    None, "Impossible d'ouvrir",
-                    f"Windows n'a pas pu ouvrir ce fichier automatiquement :\n"
-                    f"{self._path.name}\n\n"
-                    f"Tu peux le verifier dans l'explorateur :\n{self._path.parent}"
+                    None, t("rc.cant_open_title"),
+                    t("rc.cant_open_body", name=self._path.name, parent=self._path.parent)
                 )
         except Exception as e:  # noqa: BLE001
             # Log dans la console + popup, jamais de crash
@@ -231,8 +228,8 @@ class _ClickableLabel(QLabel):
             try:
                 from PyQt6.QtWidgets import QMessageBox
                 QMessageBox.critical(
-                    None, "Erreur d'ouverture",
-                    f"Erreur en ouvrant le fichier :\n{self._path.name}\n\n{e}"
+                    None, t("rc.open_error_title"),
+                    t("rc.open_error_body", name=self._path.name, err=e)
                 )
             except Exception:  # noqa: BLE001
                 pass  # meme la popup a foire, on abandonne

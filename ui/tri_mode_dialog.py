@@ -148,9 +148,8 @@ class TriModeDialog(QDialog):
 
     def _reset_api(self) -> None:
         ans = QMessageBox.question(
-            self, "Reset cle API",
-            "Supprimer la cle API stockee ? Tu devras la re-saisir au prochain "
-            "usage du mode IA cloud.",
+            self, tr("trimode.reset_title"),
+            tr("trimode.reset_body"),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
             QMessageBox.StandardButton.Cancel,
         )
@@ -158,5 +157,5 @@ class TriModeDialog(QDialog):
             return
         ks.reset_all()
         # Refresh : ferme et rouvre
-        QMessageBox.information(self, "Reset", "Cle API supprimee.")
+        QMessageBox.information(self, tr("trimode.reset_done"), tr("trimode.reset_done_body"))
         self.reject()  # ferme, l'user re-clic Analyser pour reouvrir

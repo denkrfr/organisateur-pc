@@ -64,7 +64,7 @@ class ApiClusterWorker(QObject):
                 self.provider,  # type: ignore[arg-type]
                 self.api_key,
                 items,
-                on_progress=lambda c, t, lbl: self.progress.emit(c, t, lbl),
+                on_progress=lambda c, n, lbl: self.progress.emit(c, n, lbl),
                 cancel_check=self._cancel_event.is_set,
             )
             # Convertit ApiCluster -> Cluster pour reutiliser l'UI existante
@@ -100,7 +100,7 @@ class ClusterWorker(QObject):
                 self.paths,
                 image_threshold=self.threshold,
                 text_threshold=text_threshold,
-                on_progress=lambda c, t, l: self.progress.emit(c, t, l),
+                on_progress=lambda c, n, l: self.progress.emit(c, n, l),
             )
             self.finished.emit(clusters)
         except Exception as e:  # noqa: BLE001
@@ -742,7 +742,7 @@ class ClusterView(QWidget):
         self.sim_slider.setFixedWidth(220)
         self.sim_slider.valueChanged.connect(self._update_sim_label)
         sim_row.addWidget(self.sim_slider)
-        self.sim_value_lbl = QLabel("0.78 (moyen)")
+        self.sim_value_lbl = QLabel(t("sort.threshold_default"))
         self.sim_value_lbl.setStyleSheet(f"color: {TEXT2}; font-size: 11px;")
         self.sim_value_lbl.setFixedWidth(110)
         sim_row.addWidget(self.sim_value_lbl)
@@ -849,7 +849,7 @@ class ClusterView(QWidget):
         # Filtre "Tous les fichiers" en premier : evite que le picker filtre
         # silencieusement les .heic ou autres formats par defaut.
         files, _ = QFileDialog.getOpenFileNames(
-            self, "Ajouter des fichiers a trier",
+            self, t("sort.pick_files_title"),
             "",
             "Tous les fichiers (*);;Fichiers supportes (*.jpg *.jpeg *.png *.bmp *.webp *.heic *.tiff *.gif *.pdf *.docx *.xlsx *.mp4 *.mov *.mkv *.avi *.webm)"
         )
@@ -902,7 +902,7 @@ class ClusterView(QWidget):
             )
 
     def _add_dir(self) -> None:
-        folder = QFileDialog.getExistingDirectory(self, "Ajouter un dossier a trier")
+        folder = QFileDialog.getExistingDirectory(self, t("sort.pick_dir_title"))
         if not folder:
             return
         p = Path(folder)
@@ -933,7 +933,7 @@ class ClusterView(QWidget):
         self.sim_value_lbl.setText(label)
 
     def _choose_dest(self) -> None:
-        f = QFileDialog.getExistingDirectory(self, "Racine de classement")
+        f = QFileDialog.getExistingDirectory(self, t("sort.pick_root_title"))
         if f:
             self._dest_root = Path(f)
             self.dest_input.setText(f)
@@ -1048,8 +1048,8 @@ class ClusterView(QWidget):
 
         if mode == "local" and not embeddings.embeddings_available():
             QMessageBox.critical(
-                self, "Modeles indispo",
-                "Le clustering local necessite les modeles ONNX (CLIP). Verifie le bundle."
+                self, t("sort.no_models_title"),
+                t("sort.no_models_body")
             )
             return
 
@@ -1073,7 +1073,7 @@ class ClusterView(QWidget):
             provider = ks.get_configured_provider()
             api_key = ks.load_api_key(provider) if provider else None
             if not provider or not api_key:
-                QMessageBox.critical(self, "Config manquante", "Cle API introuvable.")
+                QMessageBox.critical(self, t("sort.config_missing"), t("sort.config_missing_key"))
                 self.analyze_btn.setEnabled(True)
                 self.progress.setVisible(False)
                 return
@@ -1087,9 +1087,9 @@ class ClusterView(QWidget):
         self._worker.failed.connect(self._thread.quit)
         self._thread.start()
 
-    def _on_progress(self, c: int, t: int, label: str) -> None:
-        if self.progress.maximum() != t:
-            self.progress.setRange(0, max(1, t))
+    def _on_progress(self, c: int, total: int, label: str) -> None:
+        if self.progress.maximum() != total:
+            self.progress.setRange(0, max(1, total))
         self.progress.setValue(min(c, t))
         self.progress_label.setText(label)
 
@@ -1275,7 +1275,7 @@ class ClusterView(QWidget):
     def _on_clustering_failed(self, msg: str) -> None:
         self.progress.setVisible(False)
         self.analyze_btn.setEnabled(True)
-        QMessageBox.critical(self, "Erreur clustering", msg)
+        QMessageBox.critical(self, t("sort.cluster_error"), msg)
 
     # ==================================================================
     def _on_move_requested(self, cluster: Cluster, folder_name: str) -> None:
@@ -1297,8 +1297,8 @@ class ClusterView(QWidget):
             if root is None and self.sources:
                 root = self.sources[0].parent
             if root is None:
-                QMessageBox.warning(self, "Pas de racine",
-                                    "Choisis une racine de classement (bouton Changer...).")
+                QMessageBox.warning(self, t("sort.no_root_title"),
+                                    t("sort.no_root_body"))
                 return
         dest_dir = root.joinpath(*folder_name.replace("\\", "/").split("/"))
 
@@ -1314,7 +1314,7 @@ class ClusterView(QWidget):
         self._move_worker = MoveClusterWorker(list(cluster.items), dest_dir, folder_name)
         self._move_worker.moveToThread(self._move_thread)
         self._move_thread.started.connect(self._move_worker.run)
-        self._move_worker.progress.connect(lambda c, t: self.progress.setValue(c))
+        self._move_worker.progress.connect(lambda c, n: self.progress.setValue(c))
         self._move_worker.finished.connect(
             lambda moved, learned, errs: self._on_cluster_moved(cluster, moved, learned, errs)
         )
@@ -1377,16 +1377,15 @@ class ClusterView(QWidget):
         """
         if not self._last_clustered_paths:
             QMessageBox.information(
-                self, "Pas de session",
-                "Aucune analyse en cours a elargir. Lance d'abord une analyse."
+                self, t("sort.no_session_title"),
+                t("sort.no_session_body")
             )
             return
         new_threshold = max(0.65, self._last_used_threshold - 0.05)
         if new_threshold >= self._last_used_threshold:
             QMessageBox.information(
-                self, "Deja au minimum",
-                "Le seuil est deja au minimum (0.65), impossible d'elargir plus. "
-                "Au-dela, les groupes deviennent du n'importe quoi."
+                self, t("sort.already_min_title"),
+                t("sort.already_min_body")
             )
             return
 
@@ -1406,7 +1405,7 @@ class ClusterView(QWidget):
         # (pas de rescan des sources, vu qu'elles ont pu etre videes).
         if not embeddings.embeddings_available():
             QMessageBox.critical(
-                self, "Modeles indispo",
+                self, t("sort.no_models_title"),
                 "Modeles ONNX CLIP introuvables. Re-clustering impossible."
             )
             return
@@ -1444,8 +1443,8 @@ class ClusterView(QWidget):
         """
         if self._move_all_running:
             QMessageBox.information(
-                self, "Deja en cours",
-                "Le deplacement de masse est deja en cours, patiente."
+                self, t("sort.move_all_running"),
+                t("sort.move_all_running_body")
             )
             return
         queue: list = []
@@ -1455,9 +1454,8 @@ class ClusterView(QWidget):
                 queue.append((c.cluster, name))
         if not queue:
             QMessageBox.information(
-                self, "Aucun groupe nomme",
-                "Aucun groupe n'a de nom de dossier saisi. Tape un nom dans au "
-                "moins un groupe avant de lancer 'Deplacer TOUS'."
+                self, t("sort.move_all_none"),
+                t("sort.move_all_none_body")
             )
             return
         # Confirmation
@@ -1521,8 +1519,8 @@ class ClusterView(QWidget):
         singletons = [c for c in self.cards if c.cluster.size == 1]
         if len(singletons) < 2:
             QMessageBox.information(
-                self, "Pas d'isoles",
-                "Il n'y a pas (ou plus) d'isoles a regrouper."
+                self, t("sort.singletons_none_title"),
+                t("sort.singletons_none_body")
             )
             return
 

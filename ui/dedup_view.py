@@ -46,7 +46,7 @@ class ScanWorker(QObject):
             groups = dedup.run_pipeline(
                 self.folders,
                 include_p_hash=self.include_p_hash,
-                on_progress=lambda c, t, lbl: self.progress.emit(c, t, lbl),
+                on_progress=lambda c, n, lbl: self.progress.emit(c, n, lbl),
                 cancel_check=self._cancel_event.is_set,
             )
             self.finished.emit(groups)
