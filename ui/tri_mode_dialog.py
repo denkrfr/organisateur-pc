@@ -13,6 +13,7 @@ from PyQt6.QtWidgets import (
 )
 
 from core import api_key_store as ks
+from core.i18n import t as tr  # alias 'tr' car 't' est utilise comme variable locale
 from .styles import TEXT, TEXT2, TEXT3, CARD, BORDER, ACCENT, ACCENT2, OK
 
 
@@ -27,7 +28,7 @@ class TriModeDialog(QDialog):
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Mode de tri")
+        self.setWindowTitle(tr("trimode.window_title"))
         self.setMinimumSize(560, 480)
         self.chosen_mode: Optional[TriMode] = None
         self._build_ui()
@@ -36,7 +37,7 @@ class TriModeDialog(QDialog):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(20, 20, 20, 20)
 
-        title = QLabel("Comment veux-tu trier tes photos ?")
+        title = QLabel(tr("trimode.title"))
         title.setStyleSheet(f"color: {TEXT}; font-size: 18px; font-weight: 800;")
         layout.addWidget(title)
 
@@ -52,25 +53,20 @@ class TriModeDialog(QDialog):
         icon.setStyleSheet("font-size: 24px;")
         head.addWidget(icon)
         col = QVBoxLayout()
-        t = QLabel("Mode local (CLIP)")
-        t.setStyleSheet(f"color: {TEXT}; font-size: 16px; font-weight: 700;")
-        col.addWidget(t)
-        tag = QLabel("100% PRIVE")
+        title_local = QLabel(tr("trimode.local"))
+        title_local.setStyleSheet(f"color: {TEXT}; font-size: 16px; font-weight: 700;")
+        col.addWidget(title_local)
+        tag = QLabel(tr("trimode.local_tag"))
         tag.setStyleSheet(f"color: {OK}; font-size: 11px; font-weight: 700;")
         col.addWidget(tag)
         head.addLayout(col)
         head.addStretch()
         lcl.addLayout(head)
-        d = QLabel(
-            "Aucune photo ne quitte ton PC. Modele IA local (CLIP, ~150 Mo deja "
-            "embarque dans l'app). Tourne sur le CPU.\n\n"
-            "Regroupe par ressemblance visuelle (memes couleurs, formes, scenes). "
-            "Plus lent (~0.5 sec par photo), plus restrictif sur les criteres."
-        )
+        d = QLabel(tr("trimode.local_desc"))
         d.setStyleSheet(f"color: {TEXT2}; font-size: 12px;")
         d.setWordWrap(True)
         lcl.addWidget(d)
-        local_btn = QPushButton("Utiliser le mode local")
+        local_btn = QPushButton(tr("trimode.local_btn"))
         local_btn.clicked.connect(self._choose_local)
         lcl.addWidget(local_btn)
         layout.addWidget(local_card)
@@ -87,22 +83,16 @@ class TriModeDialog(QDialog):
         icon2.setStyleSheet("font-size: 24px;")
         head2.addWidget(icon2)
         col2 = QVBoxLayout()
-        t2 = QLabel("Mode IA cloud")
+        t2 = QLabel(tr("trimode.api"))
         t2.setStyleSheet(f"color: {TEXT}; font-size: 16px; font-weight: 700;")
         col2.addWidget(t2)
-        tag2 = QLabel("RAPIDE & MALIN")
+        tag2 = QLabel(tr("trimode.api_tag"))
         tag2.setStyleSheet(f"color: {ACCENT2}; font-size: 11px; font-weight: 700;")
         col2.addWidget(tag2)
         head2.addLayout(col2)
         head2.addStretch()
         acl.addLayout(head2)
-        d2 = QLabel(
-            "Tes photos sont envoyees a Google Gemini ou OpenAI GPT-5 nano pour "
-            "analyse. Plus rapide et plus precis, regroupe par THEME (plage, "
-            "repas, captures de cours, animaux, documents...) et te propose un "
-            "nom d'album pour chaque groupe.\n\n"
-            "Necessite une cle API (gratuite pour Gemini)."
-        )
+        d2 = QLabel(tr("trimode.api_desc"))
         d2.setStyleSheet(f"color: {TEXT2}; font-size: 12px;")
         d2.setWordWrap(True)
         acl.addWidget(d2)
@@ -111,20 +101,20 @@ class TriModeDialog(QDialog):
         configured = ks.get_configured_provider()
         if configured:
             label_map = {
-                "gemini": "Google Gemini (gratuit)",
-                "gemini-paid": "Google Gemini (privee)",
+                "gemini": "Google Gemini (gratuit / free)",
+                "gemini-paid": "Google Gemini (private)",
                 "openai": "OpenAI GPT-5 nano",
             }
-            cfg = QLabel(f"✓ Configure : {label_map.get(configured, configured)}")
+            cfg = QLabel(tr("trimode.api_configured", provider=label_map.get(configured, configured)))
             cfg.setStyleSheet(f"color: {OK}; font-size: 12px; font-weight: 600;")
             acl.addWidget(cfg)
 
-        api_btn = QPushButton("Utiliser le mode IA cloud")
+        api_btn = QPushButton(tr("trimode.api_btn"))
         api_btn.clicked.connect(self._choose_api)
         acl.addWidget(api_btn)
 
         if configured:
-            reset_btn = QPushButton("Reset cle API")
+            reset_btn = QPushButton(tr("trimode.api_reset"))
             reset_btn.setProperty("role", "secondary")
             reset_btn.clicked.connect(self._reset_api)
             acl.addWidget(reset_btn)
@@ -134,7 +124,7 @@ class TriModeDialog(QDialog):
 
         row = QHBoxLayout()
         row.addStretch()
-        cancel = QPushButton("Annuler")
+        cancel = QPushButton(tr("common.cancel"))
         cancel.setProperty("role", "secondary")
         cancel.clicked.connect(self.reject)
         row.addWidget(cancel)

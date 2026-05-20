@@ -14,6 +14,7 @@ from PyQt6.QtWidgets import (
 from send2trash import send2trash
 
 from core import dedup
+from core.i18n import t
 from core.models import DupGroup, Asset
 from .styles import fmt_size
 from .result_cards import DupGroupRow
@@ -156,22 +157,19 @@ class DedupView(QWidget):
 
         # Ligne titre + bouton Retour (visible uniquement quand resultats affiches)
         title_row = QHBoxLayout()
-        self.back_btn = QPushButton("← Retour")
+        self.back_btn = QPushButton(t("common.back"))
         self.back_btn.setProperty("role", "secondary")
-        self.back_btn.setToolTip("Effacer les resultats et revenir a la selection de dossiers")
+        self.back_btn.setToolTip(t("dedup.back_tip"))
         self.back_btn.clicked.connect(self._back_to_setup)
         self.back_btn.setVisible(False)
         title_row.addWidget(self.back_btn)
-        title = QLabel("Detection de doublons")
+        title = QLabel(t("dedup.title"))
         title.setProperty("role", "title")
         title_row.addWidget(title)
         title_row.addStretch()
         layout.addLayout(title_row)
 
-        subtitle = QLabel(
-            "Scanne les dossiers pour les doublons exacts et quasi-doublons "
-            "(images, videos, PDF/Word/Excel). 100% local."
-        )
+        subtitle = QLabel(t("dedup.subtitle"))
         subtitle.setProperty("role", "subtitle")
         layout.addWidget(subtitle)
 
@@ -182,10 +180,10 @@ class DedupView(QWidget):
         folders_row.addWidget(self.folders_list, stretch=1)
 
         folders_btns = QVBoxLayout()
-        add_btn = QPushButton("Ajouter dossier")
+        add_btn = QPushButton(t("dedup.add_folder"))
         add_btn.clicked.connect(self._add_folder)
         folders_btns.addWidget(add_btn)
-        rm_btn = QPushButton("Retirer")
+        rm_btn = QPushButton(t("dedup.remove"))
         rm_btn.setProperty("role", "secondary")
         rm_btn.clicked.connect(self._remove_folder)
         folders_btns.addWidget(rm_btn)
@@ -195,20 +193,15 @@ class DedupView(QWidget):
 
         # --- Options + scan ---
         opt_row = QHBoxLayout()
-        self.phash_cb = QCheckBox("Detecter aussi les quasi-doublons (recompressions, exports HEIC/JPG)")
+        self.phash_cb = QCheckBox(t("dedup.include_phash"))
         self.phash_cb.setChecked(False)
-        self.phash_cb.setToolTip(
-            "Decoche par defaut : detection visuelle via aHash (8x8 grayscale) qui "
-            "peut generer des faux positifs (photos visuellement proches mais pas "
-            "vraiment doublons). A activer surtout pour retrouver des "
-            "compressions WhatsApp / exports HEIC->JPG de la meme photo originale."
-        )
+        self.phash_cb.setToolTip(t("dedup.include_phash_tip"))
         opt_row.addWidget(self.phash_cb)
         opt_row.addStretch()
-        self.scan_btn = QPushButton("Scanner")
+        self.scan_btn = QPushButton(t("dedup.scan"))
         self.scan_btn.clicked.connect(self._start_scan)
         opt_row.addWidget(self.scan_btn)
-        self.cancel_btn = QPushButton("Annuler")
+        self.cancel_btn = QPushButton(t("dedup.cancel_scan"))
         self.cancel_btn.setProperty("role", "danger")
         self.cancel_btn.setVisible(False)
         self.cancel_btn.clicked.connect(self._cancel_scan)
@@ -225,21 +218,21 @@ class DedupView(QWidget):
         # --- Bandeau Resultats + filtre ---
         from .styles import ACCENT, TEXT, TEXT2
         header_row = QHBoxLayout()
-        results_title = QLabel("Resultats du scan")
+        results_title = QLabel(t("dedup.results"))
         results_title.setStyleSheet(f"color: {TEXT}; font-size: 15px; font-weight: 700;")
         header_row.addWidget(results_title)
-        self.groups_badge = QLabel("0 groupes")
+        self.groups_badge = QLabel(t("dedup.groups_badge", n=0))
         self.groups_badge.setStyleSheet(
             f"background: {ACCENT}; color: white; padding: 2px 10px; "
             f"border-radius: 10px; font-size: 11px; font-weight: 700;"
         )
         header_row.addWidget(self.groups_badge)
         header_row.addStretch()
-        filter_label = QLabel("Afficher :")
+        filter_label = QLabel(t("dedup.filter"))
         filter_label.setStyleSheet(f"color: {TEXT2}; font-size: 11px;")
         header_row.addWidget(filter_label)
         self.filter_combo = QComboBox()
-        self.filter_combo.addItems(["Tous les groupes", "Exacts uniquement", "Quasi uniquement"])
+        self.filter_combo.addItems([t("dedup.filter_all"), t("dedup.filter_exact"), t("dedup.filter_quasi")])
         self.filter_combo.currentIndexChanged.connect(self._apply_filter)
         header_row.addWidget(self.filter_combo)
         layout.addLayout(header_row)
@@ -252,7 +245,7 @@ class DedupView(QWidget):
         self._results_layout = QVBoxLayout(self._results_container)
         self._results_layout.setContentsMargins(0, 0, 0, 0)
         self._results_layout.setSpacing(8)
-        self._empty_lbl = QLabel("Lance un scan pour voir les doublons.")
+        self._empty_lbl = QLabel(t("dedup.empty"))
         self._empty_lbl.setProperty("role", "subtitle")
         self._empty_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._results_layout.addWidget(self._empty_lbl)
@@ -262,23 +255,23 @@ class DedupView(QWidget):
 
         # --- Bottom bar ---
         bottom = QHBoxLayout()
-        all_but_biggest_btn = QPushButton("Tous groupes : garder la version la plus volumineuse")
+        all_but_biggest_btn = QPushButton(t("dedup.bulk_keep_biggest"))
         all_but_biggest_btn.setProperty("role", "secondary")
         all_but_biggest_btn.clicked.connect(self._check_all_but_biggest_global)
         bottom.addWidget(all_but_biggest_btn)
-        uncheck_btn = QPushButton("Tout decocher")
+        uncheck_btn = QPushButton(t("dedup.bulk_uncheck"))
         uncheck_btn.setProperty("role", "secondary")
         uncheck_btn.clicked.connect(self._uncheck_all_global)
         bottom.addWidget(uncheck_btn)
         bottom.addStretch()
-        self.trash_btn = QPushButton("Envoyer a la corbeille systeme")
+        self.trash_btn = QPushButton(t("dedup.trash_btn"))
         self.trash_btn.setProperty("role", "danger")
         self.trash_btn.clicked.connect(self._send_checked_to_trash)
         bottom.addWidget(self.trash_btn)
         layout.addLayout(bottom)
 
         # --- Footer ---
-        self.footer = QLabel("0 groupe trouve")
+        self.footer = QLabel(t("dedup.footer_zero"))
         self.footer.setProperty("role", "subtitle")
         layout.addWidget(self.footer)
 
@@ -286,7 +279,7 @@ class DedupView(QWidget):
     # Selection de dossiers
     # ------------------------------------------------------------------
     def _add_folder(self) -> None:
-        folder = QFileDialog.getExistingDirectory(self, "Choisir un dossier a scanner")
+        folder = QFileDialog.getExistingDirectory(self, t("dedup.pick_folder"))
         if not folder:
             return
         path = Path(folder)
@@ -306,7 +299,7 @@ class DedupView(QWidget):
     # ------------------------------------------------------------------
     def _start_scan(self) -> None:
         if not self.folders:
-            QMessageBox.information(self, "Pas de dossier", "Ajoute au moins un dossier a scanner.")
+            QMessageBox.information(self, t("dedup.no_folder_title"), t("dedup.no_folder_body"))
             return
         self.scan_btn.setVisible(False)
         self.cancel_btn.setVisible(True)
@@ -314,7 +307,7 @@ class DedupView(QWidget):
         self._clear_results()
         self.progress_bar.setVisible(True)
         self.progress_bar.setRange(0, 0)
-        self.progress_label.setText("Initialisation...")
+        self.progress_label.setText(t("dedup.init"))
 
         self._thread = QThread(self)
         self._worker = ScanWorker(list(self.folders), self.phash_cb.isChecked())
@@ -333,12 +326,12 @@ class DedupView(QWidget):
     def _cancel_scan(self) -> None:
         if self._worker is not None:
             self.cancel_btn.setEnabled(False)
-            self.progress_label.setText("Annulation en cours...")
+            self.progress_label.setText(t("dedup.cancelling"))
             self._worker.cancel()
 
     def _on_cancelled(self) -> None:
         self.progress_bar.setVisible(False)
-        self.progress_label.setText("Scan annule.")
+        self.progress_label.setText(t("dedup.cancelled"))
         self.scan_btn.setVisible(True)
         self.cancel_btn.setVisible(False)
 
@@ -361,7 +354,7 @@ class DedupView(QWidget):
     def _on_finished(self, groups: list) -> None:
         self.groups = groups
         self.progress_bar.setVisible(False)
-        self.progress_label.setText(f"Termine. {len(groups)} groupe(s) trouve(s).")
+        self.progress_label.setText(t("dedup.scan_done", n=len(groups)))
         self.scan_btn.setVisible(True)
         self.cancel_btn.setVisible(False)
         self._render_results(groups)
@@ -373,11 +366,11 @@ class DedupView(QWidget):
         """Efface les resultats et revient a l'etat initial de selection."""
         self._clear_results()
         self.groups = []
-        self.groups_badge.setText("0 groupes")
-        self._empty_lbl.setText("Lance un scan pour voir les doublons.")
+        self.groups_badge.setText(t("dedup.groups_badge", n=0))
+        self._empty_lbl.setText(t("dedup.empty"))
         self._empty_lbl.setVisible(True)
         self.progress_label.setText("")
-        self.footer.setText("0 groupe trouve")
+        self.footer.setText(t("dedup.footer_zero"))
         self.back_btn.setVisible(False)
 
     def _on_failed(self, error: str) -> None:
@@ -385,7 +378,7 @@ class DedupView(QWidget):
         self.progress_label.setText("")
         self.scan_btn.setVisible(True)
         self.cancel_btn.setVisible(False)
-        QMessageBox.critical(self, "Erreur de scan", error)
+        QMessageBox.critical(self, t("dedup.scan_error_title"), error)
 
     # ------------------------------------------------------------------
     # Rendu resultats (DupGroupRow)
@@ -409,15 +402,15 @@ class DedupView(QWidget):
     def _render_results(self, groups: list[DupGroup]) -> None:
         self._clear_results()
         if not groups:
-            self._empty_lbl.setText("Aucun doublon trouve.")
+            self._empty_lbl.setText(t("dedup.no_dup_found"))
             self._update_footer()
-            self.groups_badge.setText("0 groupes")
+            self.groups_badge.setText(t("dedup.groups_badge", n=0))
             return
         self._empty_lbl.setVisible(False)
         self._pending_groups = list(groups)
         self._rendered_count = 0
         self._render_next_page()
-        self.groups_badge.setText(f"{len(groups)} groupes")
+        self.groups_badge.setText(t("dedup.groups_badge", n=len(groups)))
         self._apply_filter()
         self._update_footer()
 
@@ -441,7 +434,9 @@ class DedupView(QWidget):
         # Si reste, ajoute un bouton "Afficher plus"
         remaining = len(self._pending_groups) - self._rendered_count
         if remaining > 0:
-            self._more_btn = QPushButton(f"Afficher {min(self.PAGE_SIZE, remaining)} de plus ({remaining} restants)")
+            self._more_btn = QPushButton(
+                t("dedup.show_more", n=min(self.PAGE_SIZE, remaining), rest=remaining)
+            )
             self._more_btn.setProperty("role", "secondary")
             self._more_btn.clicked.connect(self._render_next_page)
             self._results_layout.insertWidget(self._results_layout.count() - 1, self._more_btn)
@@ -483,19 +478,19 @@ class DedupView(QWidget):
 
     def _update_footer(self) -> None:
         if not self.group_rows:
-            self.footer.setText("0 groupe trouve")
+            self.footer.setText(t("dedup.footer_zero"))
             return
         checked = self._all_checked()
         n_groups = len(self.group_rows)
         if not checked:
             total = sum(g.total_recoverable for g in self.groups)
             self.footer.setText(
-                f"{n_groups} groupe(s) trouves — {fmt_size(total)} recuperables au total"
+                t("dedup.footer_groups", n=n_groups, size=fmt_size(total))
             )
             return
         bytes_sel = sum(a.size for _, a in checked)
         self.footer.setText(
-            f"{len(checked)} fichier(s) coche(s) — {fmt_size(bytes_sel)} a liberer"
+            t("dedup.footer_checked", n=len(checked), size=fmt_size(bytes_sel))
         )
 
     # ------------------------------------------------------------------
@@ -504,16 +499,13 @@ class DedupView(QWidget):
     def _send_checked_to_trash(self) -> None:
         checked = self._all_checked()
         if not checked:
-            QMessageBox.information(self, "Rien a supprimer", "Coche au moins un fichier.")
+            QMessageBox.information(self, t("common.empty"), t("dedup.nothing_to_delete"))
             return
         bytes_total = sum(a.size for _, a in checked)
         ans = QMessageBox.question(
             self,
-            "Envoyer a la corbeille ?",
-            f"{len(checked)} fichier(s) seront envoyes a la corbeille systeme.\n\n"
-            f"{fmt_size(bytes_total)} seront liberes.\n\n"
-            "Tu pourras les recuperer depuis la corbeille Windows tant qu'elle "
-            "n'est pas vide.",
+            t("dedup.trash_confirm_title"),
+            t("dedup.trash_confirm_body", n=len(checked), size=fmt_size(bytes_total)),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
             QMessageBox.StandardButton.Cancel,
         )
@@ -532,7 +524,7 @@ class DedupView(QWidget):
         self.progress_bar.setVisible(True)
         self.progress_bar.setRange(0, len(paths))
         self.progress_bar.setValue(0)
-        self.progress_label.setText(f"Envoi a la corbeille : 0 / {len(paths)}")
+        self.progress_label.setText(t("dedup.trash_progress", done=0, total=len(paths)))
 
         # Demarre le worker
         self._trash_thread = QThread()
@@ -549,9 +541,9 @@ class DedupView(QWidget):
     def _on_trash_progress(self, done: int, total: int, current: str) -> None:
         self.progress_bar.setValue(done)
         if current:
-            self.progress_label.setText(f"Envoi a la corbeille : {done} / {total} — {current}")
+            self.progress_label.setText(t("dedup.trash_progress_file", done=done, total=total, file=current))
         else:
-            self.progress_label.setText(f"Envoi a la corbeille : {done} / {total}")
+            self.progress_label.setText(t("dedup.trash_progress", done=done, total=total))
 
     def _on_trash_finished(self, moved: int, errors: list) -> None:
         # On masque la barre + reactive les boutons AVANT de toucher les widgets
@@ -563,12 +555,12 @@ class DedupView(QWidget):
         self.scan_btn.setEnabled(True)
 
         # Message de confirmation
-        msg = f"[FINI] {moved} fichier(s) envoyes a la corbeille."
+        msg = t("dedup.trash_done_full", n=moved)
         if errors:
-            msg += f"\n\n{len(errors)} erreur(s) :\n" + "\n".join(errors[:10])
+            msg += t("dedup.trash_errors", n=len(errors)) + "\n".join(errors[:10])
             if len(errors) > 10:
-                msg += f"\n... et {len(errors) - 10} autres."
-        QMessageBox.information(self, "Termine", msg)
+                msg += f"\n... ({len(errors) - 10})"
+        QMessageBox.information(self, t("common.done"), msg)
 
         # Retour ecran d'accueil (efface tous les groupes affiches sans toucher
         # aux fichiers sur disque). C'est l'approche la plus robuste : on ne

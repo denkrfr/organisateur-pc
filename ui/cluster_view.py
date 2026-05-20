@@ -29,6 +29,7 @@ from PIL import Image as _PILImage
 from core import clustering, docs, exemplars, embeddings, sort
 from core import api_key_store as ks, api_providers as ap
 from core.clustering import Cluster
+from core.i18n import t
 from .styles import (
     fmt_size, ACCENT, ACCENT2, TEXT, TEXT2, TEXT3, CARD, CARD2, BORDER, OK,
 )
@@ -177,33 +178,30 @@ class ClusterContentsDialog(QDialog):
         super().__init__(parent)
         self.cluster = cluster
         self._checked: dict[Path, bool] = {p: True for p in cluster.items}
-        self.setWindowTitle(f"Contenu du groupe ({cluster.size} fichiers)")
+        self.setWindowTitle(t("dlg.cluster.title", n=cluster.size))
         self.setMinimumSize(720, 560)
         self._build_ui()
 
     def _build_ui(self) -> None:
         layout = QVBoxLayout(self)
 
-        info = QLabel(
-            f"Decoche les fichiers qui ne devraient pas etre dans ce groupe. "
-            f"Seuls les fichiers coches seront deplaces."
-        )
+        info = QLabel(t("dlg.cluster.info"))
         info.setStyleSheet(f"color: {TEXT2}; font-size: 11px;")
         info.setWordWrap(True)
         layout.addWidget(info)
 
         # Boutons rapides
         quick = QHBoxLayout()
-        all_btn = QPushButton("Tout cocher")
+        all_btn = QPushButton(t("dlg.dup.check_all"))
         all_btn.setProperty("role", "secondary")
         all_btn.clicked.connect(self._check_all)
         quick.addWidget(all_btn)
-        none_btn = QPushButton("Tout decocher")
+        none_btn = QPushButton(t("dlg.dup.uncheck_all"))
         none_btn.setProperty("role", "secondary")
         none_btn.clicked.connect(self._uncheck_all)
         quick.addWidget(none_btn)
         quick.addStretch()
-        self.count_lbl = QLabel(f"{self.cluster.size} / {self.cluster.size} coches")
+        self.count_lbl = QLabel(t("dlg.cluster.checked", n=self.cluster.size, total=self.cluster.size))
         self.count_lbl.setStyleSheet(f"color: {TEXT}; font-size: 11px;")
         quick.addWidget(self.count_lbl)
         layout.addLayout(quick)
@@ -278,7 +276,7 @@ class ClusterContentsDialog(QDialog):
         p = item.data(Qt.ItemDataRole.UserRole)
         self._checked[p] = item.checkState() == Qt.CheckState.Checked
         n_checked = sum(1 for v in self._checked.values() if v)
-        self.count_lbl.setText(f"{n_checked} / {len(self._checked)} coches")
+        self.count_lbl.setText(t("dlg.cluster.checked", n=n_checked, total=len(self._checked)))
 
     def kept_paths(self) -> list[Path]:
         out = []
@@ -381,29 +379,23 @@ class ClusterCard(QFrame):
         if cluster.size > 1:
             sec_row = QHBoxLayout()
             sec_row.setSpacing(6)
-            self._see_btn = QPushButton(f"Voir / decocher les intrus ({cluster.size} fichiers)")
+            self._see_btn = QPushButton(t("card.see_files", n=cluster.size))
             self._see_btn.setProperty("role", "secondary")
             self._see_btn.setStyleSheet(
                 f"color: {TEXT2}; background: transparent; border: 1px solid {BORDER}; "
                 f"border-radius: 4px; padding: 4px 10px; font-size: 11px;"
             )
-            self._see_btn.setToolTip("Optionnel : voir tous les fichiers et decocher ceux qui n'ont rien a faire la")
+            self._see_btn.setToolTip(t("card.see_files_tip"))
             self._see_btn.clicked.connect(self._open_contents_dialog)
             sec_row.addWidget(self._see_btn)
             # Bouton "Elargir" : relance le clustering global avec un seuil -0.05.
-            # Utile si tu vois qu'un groupe est trop fin et devrait inclure des
-            # photos voisines non-regroupees.
-            elargir = QPushButton("Elargir le regroupement")
+            elargir = QPushButton(t("card.elargir"))
             elargir.setProperty("role", "secondary")
             elargir.setStyleSheet(
                 f"color: {ACCENT2}; background: transparent; border: 1px solid {ACCENT}; "
                 f"border-radius: 4px; padding: 4px 10px; font-size: 11px;"
             )
-            elargir.setToolTip(
-                "Re-lance le clustering avec un seuil de similarite reduit de 0.05. "
-                "Les groupes deviendront plus larges (et donc plus permissifs). "
-                "Utile si ce groupe te semble trop fin."
-            )
+            elargir.setToolTip(t("card.elargir_tip"))
             elargir.clicked.connect(self.recluster_loose_requested.emit)
             sec_row.addWidget(elargir)
             sec_row.addStretch()
@@ -411,12 +403,12 @@ class ClusterCard(QFrame):
 
         # Input + bouton (Deplacer est le bouton PRIMAIRE, bien visible)
         action = QHBoxLayout()
-        action.addWidget(QLabel("Nom du dossier :"))
+        action.addWidget(QLabel(t("card.folder_label")))
         self.folder_input = QLineEdit()
         # Si l'API a propose un nom, pre-remplir (l'user peut modifier)
         if cluster.suggested_name:
             self.folder_input.setText(cluster.suggested_name)
-        self.folder_input.setPlaceholderText("Tape un nom (ex: skyvision, Plage, Factures...)")
+        self.folder_input.setPlaceholderText(t("card.folder_placeholder"))
         self.folder_input.setStyleSheet(
             f"background: {CARD2}; color: {TEXT}; border: 1px solid {BORDER}; "
             f"border-radius: 4px; padding: 6px 10px;"
@@ -430,16 +422,16 @@ class ClusterCard(QFrame):
         action.addWidget(self.folder_input, stretch=1)
 
         # Bouton primaire bien visible : c'est l'action principale d'un cluster
-        self.move_btn = QPushButton("Deplacer ce groupe")
+        self.move_btn = QPushButton(t("card.move_btn"))
         self.move_btn.setStyleSheet(
             f"background: {ACCENT}; color: white; padding: 8px 14px; "
             f"border-radius: 5px; font-weight: 700; font-size: 12px;"
         )
-        self.move_btn.setToolTip("Cree le dossier (si necessaire) et y deplace tous les fichiers du groupe")
+        self.move_btn.setToolTip(t("card.move_btn_tip"))
         self.move_btn.clicked.connect(self._on_move_clicked)
         action.addWidget(self.move_btn)
 
-        self.skip_btn = QPushButton("Ignorer")
+        self.skip_btn = QPushButton(t("card.skip"))
         self.skip_btn.setProperty("role", "secondary")
         self.skip_btn.setStyleSheet(
             f"color: {TEXT2}; background: transparent; border: 1px solid {BORDER}; "
@@ -461,24 +453,22 @@ class ClusterCard(QFrame):
         if dlg.exec() == QDialog.DialogCode.Accepted:
             kept = dlg.kept_paths()
             if not kept:
-                QMessageBox.information(self, "Vide", "Aucun fichier coche, le groupe est vide.")
+                QMessageBox.information(self, t("common.empty"), t("card.name_required"))
                 return
             # Modifie le cluster sur place pour ne garder que les fichiers coches
             self.cluster.items = kept
-            # Met a jour le compteur affiche sur la card (si on a un label dedie)
+            # Met a jour le compteur affiche sur la card
             if hasattr(self, "_count_label") and self._count_label is not None:
-                self._count_label.setText(
-                    f"{len(kept)} fichier{'s' if len(kept) > 1 else ''}  ·  "
-                    f"{fmt_size(sum(p.stat().st_size for p in kept if p.exists()))}"
-                )
+                size_total = fmt_size(sum(p.stat().st_size for p in kept if p.exists()))
+                self._count_label.setText(f"{len(kept)} · {size_total}")
             # Met a jour le texte du bouton "Voir / decocher" aussi
             if hasattr(self, "_see_btn") and self._see_btn is not None:
-                self._see_btn.setText(f"Voir / decocher les intrus ({len(kept)} fichiers)")
+                self._see_btn.setText(t("card.see_files", n=len(kept)))
 
     def _on_move_clicked(self) -> None:
         name = self.folder_input.text().strip()
         if not name:
-            QMessageBox.information(self, "Nom requis", "Tape un nom de dossier avant de deplacer.")
+            QMessageBox.information(self, t("common.warning"), t("card.name_required"))
             return
         self.move_requested.emit(self.cluster, name)
 
@@ -580,29 +570,25 @@ class ClusterView(QWidget):
 
         # Ligne titre + bouton Retour (visible uniquement quand resultats affiches)
         title_row = QHBoxLayout()
-        self.back_btn = QPushButton("← Retour")
+        self.back_btn = QPushButton(t("common.back"))
         self.back_btn.setProperty("role", "secondary")
-        self.back_btn.setToolTip("Effacer les groupes et revenir a la selection de fichiers")
+        self.back_btn.setToolTip(t("sort.back_tip"))
         self.back_btn.clicked.connect(self._back_to_setup)
         self.back_btn.setVisible(False)
         title_row.addWidget(self.back_btn)
-        title = QLabel("Tri par ressemblance")
+        title = QLabel(t("sort.title"))
         title.setStyleSheet(f"color: {TEXT}; font-size: 22px; font-weight: 800;")
         title_row.addWidget(title)
         title_row.addStretch()
         layout.addLayout(title_row)
 
-        subtitle = QLabel(
-            "Regroupe automatiquement les fichiers qui se ressemblent. "
-            "Pour chaque groupe, tape un nom de dossier et clique Deplacer. "
-            "Pas d'apprentissage prealable necessaire."
-        )
+        subtitle = QLabel(t("sort.subtitle"))
         subtitle.setStyleSheet(f"color: {TEXT2}; font-size: 11px;")
         subtitle.setWordWrap(True)
         layout.addWidget(subtitle)
 
         # Liste des sources : fichiers ou dossiers ajoutes par l'user
-        src_lbl = QLabel("Fichiers et dossiers a trier :")
+        src_lbl = QLabel(t("sort.sources_label"))
         src_lbl.setStyleSheet(f"color: {TEXT}; font-weight: 600;")
         layout.addWidget(src_lbl)
         src_box = QHBoxLayout()
@@ -610,19 +596,19 @@ class ClusterView(QWidget):
         self.sources_list.setMaximumHeight(120)
         src_box.addWidget(self.sources_list, stretch=1)
         src_btns = QVBoxLayout()
-        add_files_btn = QPushButton("+ Ajouter fichiers...")
+        add_files_btn = QPushButton(t("sort.add_files"))
         add_files_btn.clicked.connect(self._add_files)
         src_btns.addWidget(add_files_btn)
-        add_dir_btn = QPushButton("+ Ajouter dossier...")
+        add_dir_btn = QPushButton(t("sort.add_dir"))
         add_dir_btn.clicked.connect(self._add_dir)
         src_btns.addWidget(add_dir_btn)
-        rm_btn = QPushButton("Retirer")
+        rm_btn = QPushButton(t("sort.remove"))
         rm_btn.setProperty("role", "secondary")
         rm_btn.clicked.connect(self._remove_source)
         src_btns.addWidget(rm_btn)
-        clear_btn = QPushButton("Vider la liste")
+        clear_btn = QPushButton(t("sort.clear"))
         clear_btn.setProperty("role", "secondary")
-        clear_btn.setToolTip("Retire tous les fichiers/dossiers de la liste (ne touche pas aux fichiers sur disque)")
+        clear_btn.setToolTip(t("sort.clear_tip"))
         clear_btn.clicked.connect(self._clear_sources)
         src_btns.addWidget(clear_btn)
         src_btns.addStretch()
@@ -631,13 +617,13 @@ class ClusterView(QWidget):
 
         # Racine de classement
         dest_row = QHBoxLayout()
-        dest_lbl = QLabel("Racine de classement :")
+        dest_lbl = QLabel(t("sort.dest_root"))
         dest_lbl.setFixedWidth(160)
         dest_lbl.setStyleSheet(f"color: {TEXT}; font-weight: 600;")
         dest_row.addWidget(dest_lbl)
         self.dest_input = QLineEdit()
         self.dest_input.setReadOnly(True)
-        self.dest_input.setPlaceholderText("(par defaut = meme dossier que source)")
+        self.dest_input.setPlaceholderText(t("sort.dest_placeholder"))
         self.dest_input.setStyleSheet(
             f"background: {CARD}; color: {TEXT}; border: 1px solid {BORDER}; "
             f"border-radius: 4px; padding: 6px 10px;"
@@ -651,10 +637,10 @@ class ClusterView(QWidget):
 
         # Options
         opt_row = QHBoxLayout()
-        self.recursive_cb = QCheckBox("Inclure sous-dossiers")
+        self.recursive_cb = QCheckBox(t("sort.recursive"))
         self.recursive_cb.setChecked(False)
         opt_row.addWidget(self.recursive_cb)
-        self.filters_cb = QCheckBox("Ignorer icones et fichiers systeme")
+        self.filters_cb = QCheckBox(t("sort.filters"))
         self.filters_cb.setChecked(False)
         opt_row.addWidget(self.filters_cb)
         opt_row.addStretch()
@@ -662,7 +648,7 @@ class ClusterView(QWidget):
 
         # Seuil de similarite (slider)
         sim_row = QHBoxLayout()
-        sim_lbl = QLabel("Stricte du regroupement :")
+        sim_lbl = QLabel(t("sort.threshold"))
         sim_lbl.setStyleSheet(f"color: {TEXT}; font-size: 11px;")
         sim_row.addWidget(sim_lbl)
         self.sim_slider = QSlider(Qt.Orientation.Horizontal)
@@ -682,7 +668,7 @@ class ClusterView(QWidget):
         # Actions
         actions = QHBoxLayout()
         actions.addStretch()
-        self.analyze_btn = QPushButton("Analyser et regrouper")
+        self.analyze_btn = QPushButton(t("sort.analyze"))
         self.analyze_btn.clicked.connect(self._start_clustering)
         actions.addWidget(self.analyze_btn)
         layout.addLayout(actions)
@@ -703,9 +689,7 @@ class ClusterView(QWidget):
         self._container_layout = QVBoxLayout(self._container)
         self._container_layout.setContentsMargins(0, 0, 0, 0)
         self._container_layout.setSpacing(10)
-        self._empty_lbl = QLabel(
-            "Choisis un dossier en vrac et clique \"Analyser et regrouper\"."
-        )
+        self._empty_lbl = QLabel(t("sort.empty"))
         self._empty_lbl.setStyleSheet(f"color: {TEXT3}; font-size: 12px;")
         self._empty_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._container_layout.addWidget(self._empty_lbl)
@@ -719,36 +703,30 @@ class ClusterView(QWidget):
 
         # Bouton "Deplacer les isoles vers un album commun"
         # Apparait si au moins 1 cluster de taille 1 (singleton) existe.
-        self.move_singletons_btn = QPushButton("Deplacer les isoles dans un album commun")
+        self.move_singletons_btn = QPushButton(t("sort.move_singletons", n=0))
         self.move_singletons_btn.setStyleSheet(
             f"background: {CARD2}; color: {TEXT}; padding: 8px 14px; "
             f"border-radius: 5px; font-weight: 600; font-size: 11px; "
             f"border: 1px solid {ACCENT2};"
         )
-        self.move_singletons_btn.setToolTip(
-            "Regroupe tous les fichiers qui n'ont aucun similaire (clusters d'1 "
-            "seul fichier) dans un meme dossier 'Autres' (nom modifiable)."
-        )
+        self.move_singletons_btn.setToolTip(t("sort.move_singletons_tip"))
         self.move_singletons_btn.clicked.connect(self._move_all_singletons)
         self.move_singletons_btn.setVisible(False)
         bottom.addWidget(self.move_singletons_btn)
 
-        self.move_all_btn = QPushButton("Deplacer TOUS les groupes nommes")
+        self.move_all_btn = QPushButton(t("sort.move_all"))
         self.move_all_btn.setStyleSheet(
             f"background: {OK}; color: black; padding: 8px 18px; "
             f"border-radius: 5px; font-weight: 800; font-size: 12px;"
         )
-        self.move_all_btn.setToolTip(
-            "Deplace en sequence chaque groupe pour lequel tu as tape un nom "
-            "de dossier. Les groupes sans nom sont ignores."
-        )
+        self.move_all_btn.setToolTip(t("sort.move_all_tip"))
         self.move_all_btn.clicked.connect(self._start_move_all)
         self.move_all_btn.setVisible(False)  # n'apparait que quand y a des clusters
         bottom.addWidget(self.move_all_btn)
         layout.addLayout(bottom)
 
         # Footer
-        self.footer = QLabel("0 groupe")
+        self.footer = QLabel(t("sort.footer_zero"))
         self.footer.setStyleSheet(f"color: {TEXT2}; font-size: 11px;")
         layout.addWidget(self.footer)
 
@@ -917,10 +895,10 @@ class ClusterView(QWidget):
         self.analyze_btn.setEnabled(True)
         if not clusters:
             self._empty_lbl.setVisible(True)
-            self._empty_lbl.setText("Aucun groupe forme.")
-            self.footer.setText("0 groupe")
-            self.progress_label.setText("[FINI] Aucun groupe forme.")
-            QMessageBox.information(self, "Analyse terminee", "[FINI]\n\nAucun groupe n'a ete forme.")
+            self._empty_lbl.setText(t("sort.cluster_none"))
+            self.footer.setText(t("sort.footer_zero"))
+            self.progress_label.setText(t("sort.cluster_none"))
+            QMessageBox.information(self, t("sort.cluster_done_title"), t("sort.cluster_none_popup"))
             return
         known = [f for f, _ in sort.load_known_folders()]
         if embeddings.embeddings_available():
@@ -931,15 +909,13 @@ class ClusterView(QWidget):
         self._rendered_count = 0
         self._known_folders_cache = known
         self._render_next_cluster_page()
-        self.footer.setText(f"{len(self._pending_clusters)} groupe(s) formes au total.")
+        self.footer.setText(t("sort.footer_remaining", n=len(self._pending_clusters)))
         n = len(self._pending_clusters)
-        self.progress_label.setText(f"[FINI] {n} groupe(s) formes — choisis un nom et clique Deplacer pour chaque.")
+        self.progress_label.setText(t("sort.cluster_done", n=n))
         # Message popup pour confirmer la fin de l'analyse
         QMessageBox.information(
-            self, "Analyse terminee",
-            f"[FINI]\n\n{n} groupe(s) formes.\n\n"
-            "Pour chaque groupe : tape un nom de dossier et clique Deplacer. "
-            "Quand t'as fini, clique Retour pour effacer et relancer une analyse."
+            self, t("sort.cluster_done_title"),
+            t("sort.cluster_done_body", n=n)
         )
         # Affiche le bouton Retour si on a effectivement des groupes
         if self._pending_clusters:
@@ -957,9 +933,9 @@ class ClusterView(QWidget):
         self._pending_clusters = []
         self._rendered_count = 0
         self._empty_lbl.setVisible(True)
-        self._empty_lbl.setText("Choisis un dossier en vrac et clique \"Analyser et regrouper\".")
+        self._empty_lbl.setText(t("sort.empty"))
         self.progress_label.setText("")
-        self.footer.setText("0 groupe")
+        self.footer.setText(t("sort.footer_zero"))
         self.back_btn.setVisible(False)
         self.move_all_btn.setVisible(False)
         self.move_singletons_btn.setVisible(False)
@@ -1310,22 +1286,18 @@ class ClusterView(QWidget):
 
     def _update_footer(self) -> None:
         if not self.cards:
-            self.footer.setText("Tous les groupes traites.")
+            self.footer.setText(t("sort.all_done"))
             self._empty_lbl.setVisible(True)
-            self._empty_lbl.setText("Tous les groupes ont ete traites.")
+            self._empty_lbl.setText(t("sort.all_done"))
             self.move_all_btn.setVisible(False)
             self.move_singletons_btn.setVisible(False)
         else:
             n_singletons = sum(1 for c in self.cards if c.cluster.size == 1)
-            footer_txt = f"{len(self.cards)} groupe(s) restant(s)"
             if n_singletons:
-                footer_txt += f" — dont {n_singletons} isole(s)"
-            self.footer.setText(footer_txt + ".")
+                self.footer.setText(t("sort.footer_with_iso", n=len(self.cards), iso=n_singletons))
+            else:
+                self.footer.setText(t("sort.footer_remaining", n=len(self.cards)))
             self.move_all_btn.setVisible(True)
-            # Singleton button : visible seulement s'il y a au moins 2 singletons
-            # (en avoir 1 seul, c'est juste un fichier, pas besoin d'un "album commun")
             self.move_singletons_btn.setVisible(n_singletons >= 2)
             if n_singletons >= 2:
-                self.move_singletons_btn.setText(
-                    f"Deplacer les {n_singletons} isoles dans un album commun"
-                )
+                self.move_singletons_btn.setText(t("sort.move_singletons", n=n_singletons))

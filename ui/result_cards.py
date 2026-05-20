@@ -1,5 +1,10 @@
 """Widgets visuels pour les resultats Dedup et Tri.
 
+Note: pour les strings i18n, on utilise t() de core/i18n. Les strings sont
+traduites a l'instanciation, donc un changement de langue necessite un
+redemarrage de l'app pour s'appliquer aux widgets deja construits.
+
+
 Composants :
   - ThumbnailCard    : (legacy) 1 fichier en mode carte verticale
   - DupGroupCard     : (legacy) 1 groupe de doublons en mode carte verticale
@@ -20,6 +25,7 @@ from PyQt6.QtWidgets import (
 )
 
 from core import docs
+from core.i18n import t
 from core.models import Asset, DupGroup
 from .styles import (
     fmt_size, CARD, CARD2, BORDER, TEXT, TEXT2, TEXT3, ACCENT, ACCENT2,
@@ -104,7 +110,7 @@ class ThumbnailCard(QFrame):
         meta_row.addWidget(size_lbl)
         meta_row.addStretch()
         if is_biggest:
-            badge = QLabel("A garder")
+            badge = QLabel(t("group.keep"))
             badge.setStyleSheet(
                 f"background: {OK}; color: black; padding: 2px 7px; "
                 f"border-radius: 3px; font-size: 10px; font-weight: 700;"
@@ -122,7 +128,7 @@ class ThumbnailCard(QFrame):
         layout.addWidget(path_lbl)
 
         # Checkbox
-        self.checkbox = QCheckBox("Supprimer ce fichier")
+        self.checkbox = QCheckBox(t("dedup.trash_btn"))
         if is_biggest:
             self.checkbox.setStyleSheet(f"color: {TEXT2};")
         self.checkbox.toggled.connect(self._on_toggled)
@@ -268,11 +274,11 @@ class DupGroupCard(QFrame):
         header.addStretch()
 
         # Boutons rapide groupe
-        keep_btn = QPushButton("Garder la plus grosse, cocher les autres")
+        keep_btn = QPushButton(t("dedup.bulk_keep_biggest"))
         keep_btn.setProperty("role", "secondary")
         keep_btn.clicked.connect(self.check_all_but_biggest)
         header.addWidget(keep_btn)
-        uncheck_btn = QPushButton("Decocher")
+        uncheck_btn = QPushButton(t("dedup.bulk_uncheck"))
         uncheck_btn.setProperty("role", "secondary")
         uncheck_btn.clicked.connect(self.uncheck_all)
         header.addWidget(uncheck_btn)
@@ -764,7 +770,7 @@ class DupGroupRow(QFrame):
         # Boutons Voir/Modifier + expand : visible UNIQUEMENT si gros groupe
         # (small groups montrent deja tout inline avec checkboxes)
         if not self._is_small:
-            self.see_btn = QPushButton("Voir / Modifier")
+            self.see_btn = QPushButton(t("group.see_modify"))
             self.see_btn.setStyleSheet(
                 f"background: {ACCENT}; color: white; padding: 6px 12px; "
                 f"border-radius: 4px; font-weight: 700;"
@@ -836,7 +842,7 @@ class DupGroupRow(QFrame):
             name_lbl.setToolTip(asset.path.name)
             name_row.addWidget(name_lbl)
             if i == 0:
-                tag = QLabel("A garder")
+                tag = QLabel(t("group.keep"))
                 tag.setStyleSheet(
                     f"background: {OK}; color: black; padding: 2px 7px; "
                     f"border-radius: 3px; font-size: 10px; font-weight: 700;"
@@ -893,7 +899,7 @@ class DupGroupRow(QFrame):
             name_lbl.setStyleSheet(f"color: {TEXT}; font-weight: 600; font-size: 12px;")
             name_row.addWidget(name_lbl)
             if i == 0 and not collapsed:
-                tag = QLabel("A garder")
+                tag = QLabel(t("group.keep"))
                 tag.setStyleSheet(
                     f"background: {OK}; color: black; padding: 2px 7px; "
                     f"border-radius: 3px; font-size: 10px; font-weight: 700;"

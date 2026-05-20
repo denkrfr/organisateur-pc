@@ -17,6 +17,7 @@ from PyQt6.QtWidgets import (
 )
 
 from core import docs
+from core.i18n import t
 from core.models import Asset, DupGroup
 from .styles import (
     fmt_size, TEXT, TEXT2, TEXT3, CARD, CARD2, BORDER, ACCENT, ACCENT2, OK, DANGER,
@@ -35,9 +36,7 @@ class DupGroupContentsDialog(QDialog):
         super().__init__(parent)
         self.group = group
         self._checks = list(initial_checks)
-        self.setWindowTitle(
-            f"Groupe de {len(group.items)} fichiers ({group.kind})"
-        )
+        self.setWindowTitle(t("dlg.dup.title", n=len(group.items), kind=group.kind))
         self.setMinimumSize(820, 600)
         self._build_ui()
 
@@ -47,32 +46,26 @@ class DupGroupContentsDialog(QDialog):
         outer.setSpacing(10)
 
         # Header
-        title = QLabel(
-            f"{len(self.group.items)} fichiers - "
-            f"{fmt_size(self.group.total_recoverable)} recuperables si tu coches tous sauf le + gros"
-        )
+        title = QLabel(t("dlg.dup.header", n=len(self.group.items), size=fmt_size(self.group.total_recoverable)))
         title.setStyleSheet(f"color: {TEXT}; font-size: 13px; font-weight: 600;")
         title.setWordWrap(True)
         outer.addWidget(title)
 
-        info = QLabel(
-            "✓ Coche un fichier = il sera ENVOYE A LA CORBEILLE. "
-            "Decoche pour le garder. Le + gros (en haut) est generalement la meilleure copie."
-        )
+        info = QLabel(t("dlg.dup.info"))
         info.setStyleSheet(f"color: {TEXT2}; font-size: 11px;")
         info.setWordWrap(True)
         outer.addWidget(info)
 
         # Actions rapides
         actions = QHBoxLayout()
-        keep_btn = QPushButton("Cocher tout sauf le + gros")
+        keep_btn = QPushButton(t("dlg.dup.check_all_but_first"))
         keep_btn.clicked.connect(self._check_all_but_first)
         actions.addWidget(keep_btn)
-        none_btn = QPushButton("Tout decocher")
+        none_btn = QPushButton(t("dlg.dup.uncheck_all"))
         none_btn.setProperty("role", "secondary")
         none_btn.clicked.connect(self._uncheck_all)
         actions.addWidget(none_btn)
-        all_btn = QPushButton("Tout cocher")
+        all_btn = QPushButton(t("dlg.dup.check_all"))
         all_btn.setProperty("role", "secondary")
         all_btn.clicked.connect(self._check_all)
         actions.addWidget(all_btn)
@@ -104,8 +97,8 @@ class DupGroupContentsDialog(QDialog):
         btns = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
-        btns.button(QDialogButtonBox.StandardButton.Ok).setText("Valider la selection")
-        btns.button(QDialogButtonBox.StandardButton.Cancel).setText("Annuler")
+        btns.button(QDialogButtonBox.StandardButton.Ok).setText(t("dlg.dup.validate"))
+        btns.button(QDialogButtonBox.StandardButton.Cancel).setText(t("common.cancel"))
         btns.accepted.connect(self.accept)
         btns.rejected.connect(self.reject)
         outer.addWidget(btns)
@@ -185,7 +178,7 @@ class DupGroupContentsDialog(QDialog):
         size_lbl.setStyleSheet(f"color: {TEXT2}; font-size: 11px;")
         name_row.addWidget(size_lbl)
         if idx == 0:
-            tag = QLabel("Meilleure copie (plus volumineuse)")
+            tag = QLabel(t("dlg.dup.best_copy"))
             tag.setStyleSheet(
                 f"background: {OK}; color: black; padding: 2px 8px; "
                 f"border-radius: 3px; font-size: 10px; font-weight: 700;"
@@ -228,9 +221,7 @@ class DupGroupContentsDialog(QDialog):
         size = sum(
             a.size for a, c in zip(self.group.items, self._checks) if c
         )
-        self.count_lbl.setText(
-            f"{n} / {len(self.group.items)} a supprimer ({fmt_size(size)})"
-        )
+        self.count_lbl.setText(t("dlg.dup.count", n=n, total=len(self.group.items), size=fmt_size(size)))
 
     @property
     def checked_indices(self) -> list[bool]:
