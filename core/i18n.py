@@ -148,6 +148,8 @@ STRINGS: dict[str, dict[str, str]] = {
                                  "en": "Ignore icons and system files"},
     "sort.threshold":           {"fr": "Stricte du regroupement :",
                                  "en": "Grouping strictness:"},
+    "sort.threshold_help":      {"fr": "Plus haut = groupes plus precis mais petits (et plus de singletons). Plus bas = groupes plus larges, regroupe les legeres variations visuelles. Defaut 0.78 = bon compromis pour des photos.",
+                                 "en": "Higher = stricter, smaller and more precise groups (and more singletons). Lower = looser, groups visual variations together. Default 0.78 = good compromise for photos."},
     "sort.analyze":             {"fr": "Analyser et regrouper",
                                  "en": "Analyze and group"},
     "sort.empty":               {"fr": "Choisis un dossier en vrac et clique \"Analyser et regrouper\".",

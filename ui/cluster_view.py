@@ -87,7 +87,7 @@ class ClusterWorker(QObject):
     finished = pyqtSignal(list)  # list[Cluster]
     failed = pyqtSignal(str)
 
-    def __init__(self, paths: list[Path], threshold: float = 0.88) -> None:
+    def __init__(self, paths: list[Path], threshold: float = 0.78) -> None:
         super().__init__()
         self.paths = paths
         self.threshold = threshold
@@ -565,7 +565,7 @@ class ClusterView(QWidget):
         # Paths utilises pour le dernier clustering, pour pouvoir relancer
         # un re-clustering plus permissif sans re-scanner les sources.
         self._last_clustered_paths: list[Path] = []
-        self._last_used_threshold: float = 0.88
+        self._last_used_threshold: float = 0.78
         self._build_ui()
         # Drag-and-drop natif depuis l'Explorateur Windows : plus fiable que
         # le file picker (qui peut tronquer silencieusement les selections
@@ -712,16 +712,27 @@ class ClusterView(QWidget):
         self.sim_slider = QSlider(Qt.Orientation.Horizontal)
         self.sim_slider.setMinimum(70)   # 0.70 = tres permissif (gros groupes)
         self.sim_slider.setMaximum(95)   # 0.95 = tres strict (petits groupes precis)
-        self.sim_slider.setValue(88)     # defaut : 0.88 = strict (avant c'etait 0.82)
+        # Defaut : 0.78. Test sur photos similaires (KakaoTalk multi-envois) montre
+        # qu'a 0.88 on rate 70% des paires reellement similaires (la mediane de
+        # similarite est ~0.85). 0.78 capture 70% des vraies similarites avec
+        # ZERO faux-positif sur le cross-set teste.
+        self.sim_slider.setValue(78)
         self.sim_slider.setFixedWidth(220)
         self.sim_slider.valueChanged.connect(self._update_sim_label)
         sim_row.addWidget(self.sim_slider)
-        self.sim_value_lbl = QLabel("0.88 (strict)")
+        self.sim_value_lbl = QLabel("0.78 (moyen)")
         self.sim_value_lbl.setStyleSheet(f"color: {TEXT2}; font-size: 11px;")
         self.sim_value_lbl.setFixedWidth(110)
         sim_row.addWidget(self.sim_value_lbl)
         sim_row.addStretch()
         layout.addLayout(sim_row)
+
+        # Petit help text discret sous le slider (l'user n'a pas besoin de
+        # comprendre 'cosinus', juste l'effet pratique du curseur)
+        sim_help = QLabel(t("sort.threshold_help"))
+        sim_help.setStyleSheet(f"color: {TEXT3}; font-size: 10px; font-style: italic;")
+        sim_help.setWordWrap(True)
+        layout.addWidget(sim_help)
 
         # Actions
         actions = QHBoxLayout()
