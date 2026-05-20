@@ -259,7 +259,7 @@ class LearningDialog(QDialog):
                 self, "Vide",
                 f"Aucun sous-dossier trouve dans {root}.\n\n"
                 "Choisis ta RACINE qui contient des sous-dossiers thematiques "
-                "(skyvision/, tomntoms/, etc.)"
+                "(Plage/, Famille/, Factures/, etc.)"
             )
             return
         ans = QMessageBox.question(
@@ -354,7 +354,7 @@ class LearningDialog(QDialog):
         name, ok = QInputDialog.getText(
             self,
             "Nouveau dossier",
-            "Nom du dossier (ex: Plage, Bank/Boursorama, skyvision)",
+            "Nom du dossier (ex: Plage, Famille, Factures)",
         )
         if not ok or not name.strip():
             return

@@ -182,7 +182,7 @@ def _strip_accents_lower(s: str) -> str:
 
 
 def _normalize_compact(s: str) -> str:
-    """Compact : pas d'espaces ni ponctuation. Pour matcher 'Sky Vision' ~= 'skyvision'."""
+    """Compact : pas d'espaces ni ponctuation. Pour matcher 'Foo Bar' ~= 'foobar'."""
     return re.sub(r"[^a-z0-9]+", "", _strip_accents_lower(s))
 
 
@@ -209,8 +209,8 @@ def _fuzzy_in(needle: str, haystack_tokens: list[str], threshold: float = 0.85) 
 
 def _bigrams(tokens: list[str]) -> list[str]:
     """Genere les paires de tokens adjacents concatenees.
-    Permet de matcher 'skyvision' (1 mot dans le dossier) contre 'Sky Vision'
-    (2 mots dans le texte) : tokens=['sky','vision'] -> bigrams=['skyvision']."""
+    Permet de matcher 'foobar' (1 mot dans le dossier) contre 'Foo Bar'
+    (2 mots dans le texte) : tokens=['foo','bar'] -> bigrams=['foobar']."""
     return [a + b for a, b in zip(tokens, tokens[1:])]
 
 
@@ -224,8 +224,8 @@ def match_known_folder(
     apparait dans le texte OCR ou le nom de fichier.
 
     Strategie en 3 niveaux par dossier candidat :
-      1. Match compact : 'skyvision' presente en sous-chaine dans le texte
-         normalise sans espaces (gere 'Sky Vision', 'sky-vision', 'SkyVision')
+      1. Match compact : 'foobar' presente en sous-chaine dans le texte
+         normalise sans espaces (gere 'Foo Bar', 'foo-bar', 'FooBar')
       2. Match tokens : chaque mot du dossier (>= 4 chars) est present
          (exact ou fuzzy) dans le texte. Confidence selon le ratio matches.
       3. Match fuzzy : si l'OCR a mal lu (ex: 'Vsion'), on tolere 1-2 typos
@@ -241,7 +241,7 @@ def match_known_folder(
     text_tokens = _tokenize(text, min_len=3)
     name_tokens = _tokenize(filename, min_len=3)
     all_tokens = text_tokens + name_tokens
-    # Bigrammes : 'Sky Vision' -> 'skyvision' pour matcher dossier compact
+    # Bigrammes : 'Foo Bar' -> 'foobar' pour matcher dossier compact
     all_tokens_extended = all_tokens + _bigrams(text_tokens) + _bigrams(name_tokens)
 
     best: Optional[tuple[str, float]] = None
@@ -268,7 +268,7 @@ def match_known_folder(
             # === Niveau 2 : match tokens du dossier (vs tokens + bigrams) ===
             seg_tokens = _tokenize(seg, min_len=min_token_len)
             if not seg_tokens:
-                # Dossier d'1 seul gros token (ex: 'skyvision') : on teste
+                # Dossier d'1 seul gros token (ex: 'foobar') : on teste
                 # directement contre tokens + bigrams du texte
                 if len(seg_compact) >= min_token_len:
                     if _fuzzy_in(seg_compact, all_tokens_extended):
@@ -550,8 +550,7 @@ _seed_lock = __import__("threading").Lock()
 
 def _ensure_text_seeded(known_folders: list[tuple[str, int]]) -> None:
     """DESACTIVE par defaut. Seeder le NOM du dossier comme exemplar texte
-    s'est avere etre du bruit pur pour les noms propres (genre 'tomntoms',
-    'Sejong'), creant des matches au hasard sur des images abstraites.
+    s'est avere etre du bruit pur pour les noms propres (genre 'Acme', 'Beta'), creant des matches au hasard sur des images abstraites.
 
     L'utilisateur doit explicitement amorcer un dossier via 'Apprentissage...'
     pour qu'il soit propose par le pipeline semantique.
@@ -646,7 +645,7 @@ def propose_folder(path: Path) -> SortSuggestion:
 
     # === Priorite haute : match fuzzy NOM DE DOSSIER (signal tres fiable) ===
     # Match exact d'un nom de dossier connu dans OCR/nom = signal tres fort
-    # (ex: image contient "SKY VISION" -> dossier "skyvision"). On l'utilise
+    # (ex: image contient "FOO BAR" -> dossier "foobar"). On l'utilise
     # SAUF si le semantique est tres fort (semantic_strong = match visuel direct
     # sur un autre dossier avec beaucoup d'exemplars correspondants).
     fuzzy = match_known_folder(text, path.name, known_folders)
