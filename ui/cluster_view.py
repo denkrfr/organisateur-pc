@@ -155,10 +155,19 @@ class MoveClusterWorker(QObject):
                             dest = cand
                             break
                         n += 1
-                src.rename(dest)
+                # shutil.move au lieu de src.rename : rename echoue sur Windows
+                # si src et dest sont sur des DISQUES differents (cross-device).
+                # shutil.move tente rename puis fait copy+delete en fallback.
+                # Important pour videos qui sont souvent sur un disque externe.
+                import shutil as _shutil
+                _shutil.move(str(src), str(dest))
+                # Verification post-move : si le fichier source existe encore,
+                # c'est que le move a foire en silence (rare mais possible).
+                if src.exists():
+                    raise OSError(f"Move incomplet : source existe encore apres shutil.move ({src})")
                 moved += 1
                 sort.remember_folder(self.folder_label)
-            except OSError as e:
+            except (OSError, Exception) as e:  # noqa: BLE001
                 errors.append(f"{src.name} : {e}")
             self.progress.emit(i + 1, total)
         if store is not None:

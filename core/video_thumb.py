@@ -53,29 +53,34 @@ def _get_ffmpeg() -> Optional[str]:
     return None
 
 
-def _cache_key(video_path: Path) -> Optional[str]:
-    """Cle de cache basee sur le chemin absolu + mtime + taille."""
+def _cache_key(video_path: Path, offset: float = 1.0, size: int = 256) -> Optional[str]:
+    """Cle de cache basee sur (chemin abs + mtime + taille + offset + size).
+
+    Compat : si offset=1.0 et size=256, on garde l'ancienne forme du hash
+    (sans suffixe) pour reutiliser les caches existants. Pour les autres
+    combinaisons (multi-frames embedding), nouveau format avec suffixe.
+    """
     try:
         st = video_path.stat()
     except OSError:
         return None
-    data = f"{video_path.resolve()}|{st.st_mtime_ns}|{st.st_size}"
+    if abs(offset - 1.0) < 1e-9 and size == 256:
+        # Forme historique (compat avec caches v1.2.4 - v1.2.9)
+        data = f"{video_path.resolve()}|{st.st_mtime_ns}|{st.st_size}"
+    else:
+        data = f"{video_path.resolve()}|{st.st_mtime_ns}|{st.st_size}|t{offset:.2f}|s{size}"
     return hashlib.sha256(data.encode("utf-8")).hexdigest()[:24]
 
 
-def get_video_thumbnail(video_path: Path, size: int = 256) -> Optional[Path]:
-    """Retourne le chemin d'une image JPG thumbnail de la video, ou None.
+def _extract_frame(video_path: Path, offset_seconds: float, size: int) -> Optional[Path]:
+    """Extrait UNE frame d'une video a un offset donne, cache sur disque.
 
-    L'image est cachee sur disque ; les appels suivants sur la meme video
-    sont quasi-instantanes (juste un stat() + return).
-
-    Si ffmpeg n'est pas dispo ou si l'extraction echoue, retourne None.
-    L'appelant doit gerer ce cas (typiquement, afficher le badge 'VIDEO').
+    Returns: Path vers le fichier JPG dans le cache, ou None si echec.
     """
     if not video_path.is_file():
         return None
 
-    key = _cache_key(video_path)
+    key = _cache_key(video_path, offset_seconds, size)
     if key is None:
         return None
 
@@ -92,20 +97,13 @@ def get_video_thumbnail(video_path: Path, size: int = 256) -> Optional[Path]:
     if not ffmpeg:
         return None
 
-    # Construit la commande ffmpeg :
-    #   -ss 00:00:01     : seek a 1s (souvent plus interessant que la 1ere frame
-    #                      qui peut etre noire / fade-in)
-    #   -i path          : input video
-    #   -vframes 1       : une seule frame
-    #   -vf scale=...    : resize en gardant le ratio, max 'size' sur le grand cote
-    #   -q:v 5           : qualite JPG (1=meilleure, 31=pire, 5 est un bon compromis)
-    #   -y               : overwrite output sans demander
-    #   -loglevel error  : pas de spam stdout
+    # Formatage HH:MM:SS pour ffmpeg -ss
+    ss_str = f"{offset_seconds:.2f}"
     vf = f"scale='min({size},iw)':'min({size},ih)':force_original_aspect_ratio=decrease"
     cmd = [
         ffmpeg,
         "-loglevel", "error",
-        "-ss", "00:00:01",
+        "-ss", ss_str,
         "-i", str(video_path),
         "-vframes", "1",
         "-vf", vf,
@@ -114,7 +112,6 @@ def get_video_thumbnail(video_path: Path, size: int = 256) -> Optional[Path]:
         str(cache_file),
     ]
 
-    # Note CREATE_NO_WINDOW : empeche une fenetre cmd noire de flasher sur Windows
     creationflags = 0
     if sys.platform == "win32":
         creationflags = 0x08000000  # CREATE_NO_WINDOW
@@ -123,13 +120,12 @@ def get_video_thumbnail(video_path: Path, size: int = 256) -> Optional[Path]:
         result = subprocess.run(
             cmd,
             capture_output=True,
-            timeout=15,  # 15s max par video (large mais pas infini)
+            timeout=15,
             creationflags=creationflags,
         )
         if result.returncode != 0 or not cache_file.is_file() or cache_file.stat().st_size == 0:
-            # Echec : si on a essaye de seek a 1s mais la video est < 1s, retente
-            # sans le -ss (prend la 1ere frame).
-            cmd_no_seek = [c for c in cmd if c not in ("-ss", "00:00:01")]
+            # Echec : video plus courte que l'offset. Retente sans -ss (frame 0).
+            cmd_no_seek = [c for c in cmd if c not in ("-ss", ss_str)]
             try:
                 result2 = subprocess.run(
                     cmd_no_seek,
@@ -138,7 +134,6 @@ def get_video_thumbnail(video_path: Path, size: int = 256) -> Optional[Path]:
                     creationflags=creationflags,
                 )
                 if result2.returncode != 0 or not cache_file.is_file() or cache_file.stat().st_size == 0:
-                    # Echec definitif : supprime le fichier vide si y en a un
                     try:
                         cache_file.unlink(missing_ok=True)
                     except OSError:
@@ -148,12 +143,48 @@ def get_video_thumbnail(video_path: Path, size: int = 256) -> Optional[Path]:
                 return None
         return cache_file
     except Exception:  # noqa: BLE001
-        # Timeout, ffmpeg manquant, etc.
         try:
             cache_file.unlink(missing_ok=True)
         except OSError:
             pass
         return None
+
+
+def get_video_thumbnail(video_path: Path, size: int = 256) -> Optional[Path]:
+    """Retourne le chemin d'une image JPG thumbnail de la video pour preview UI.
+
+    1 frame a 1s (souvent plus interessant que la 1ere frame qui peut etre
+    noire / fade-in). Cache sur disque, appels suivants quasi-instantanes.
+    Si ffmpeg pas dispo ou extraction echoue : None (l'UI affiche badge VIDEO).
+    """
+    return _extract_frame(video_path, 1.0, size)
+
+
+def get_video_frames_for_embedding(video_path: Path, n_frames: int = 3, size: int = 384) -> list[Path]:
+    """Extrait N frames pour le clustering (1 seule frame est trop biaisee
+    par les intros noires / logos / fade-in).
+
+    Strategie : 3 frames a 1s, 5s, 15s. Couvre intro / contenu / transitions.
+    Pour des videos courtes (< 15s par ex), seules les frames qui marchent
+    sont retournees. La liste peut donc avoir 1, 2 ou 3 elements.
+
+    Returns: liste de paths vers les frames JPG en cache. Vide si tout
+    a echoue (video corrompue, format inconnu, ffmpeg absent...).
+    """
+    if not video_path.is_file():
+        return []
+    offsets = [1.0, 5.0, 15.0][:n_frames]
+    paths: list[Path] = []
+    for offset in offsets:
+        frame = _extract_frame(video_path, offset, size)
+        if frame is not None:
+            paths.append(frame)
+    # Si tout a echoue (videos courtes ou tres courtes), fallback : frame 0
+    if not paths:
+        fallback = _extract_frame(video_path, 0.0, size)
+        if fallback is not None:
+            paths.append(fallback)
+    return paths
 
 
 def is_video_thumb_available() -> bool:

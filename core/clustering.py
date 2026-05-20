@@ -47,9 +47,38 @@ class Cluster:
 
 
 def _embed_image(path: Path) -> Optional[np.ndarray]:
-    """Embedding CLIP image (avec cache disque)."""
+    """Embedding CLIP. Images = directement. Videos = 3 frames moyennees.
+
+    Pour les videos : extrait 3 frames (1s/5s/15s) via ffmpeg, embed chacune
+    avec CLIP, moyenne + normalise les embeddings. Plus robuste qu'1 seule
+    frame (immunise contre intros noires, logos, fade-in, transitions).
+    """
     if not _emb.embeddings_available():
         return None
+
+    if docs.kind_of(path) == "video":
+        try:
+            from . import video_thumb
+            frame_paths = video_thumb.get_video_frames_for_embedding(path, n_frames=3)
+            if not frame_paths:
+                return None
+            embeds: list[np.ndarray] = []
+            for f in frame_paths:
+                v = _emb.ClipEmbedder.get().encode_image(f)
+                if v is not None:
+                    embeds.append(v)
+            if not embeds:
+                return None
+            # Moyenne des embeddings normalises + re-normalise
+            avg = np.mean(np.stack(embeds, axis=0), axis=0)
+            norm = float(np.linalg.norm(avg))
+            if norm < 1e-9:
+                return None
+            return avg / norm
+        except Exception:  # noqa: BLE001
+            return None
+
+    # Image classique
     return _emb.ClipEmbedder.get().encode_image(path)
 
 
@@ -123,8 +152,12 @@ def cluster_files(
     total = len(paths)
     on_progress(0, total, "Calcul des embeddings...")
 
-    # Phase 1 : separer images / docs
-    images = [p for p in paths if docs.kind_of(p) == "image"]
+    # Phase 1 : separer images / docs / videos.
+    # Les videos sont traitees comme des images : _embed_image extrait
+    # 3 frames via ffmpeg et embed CLIP. Du coup les videos visuellement
+    # similaires se regroupent (et peuvent meme se grouper avec des images
+    # qui ont un contenu visuel proche).
+    images = [p for p in paths if docs.kind_of(p) in ("image", "video")]
     docs_only = [p for p in paths if docs.kind_of(p) in ("pdf", "docx", "xlsx")]
 
     # Phase 2 : embeddings
