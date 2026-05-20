@@ -171,7 +171,12 @@ class ThumbnailCard(QFrame):
 
 
 class _ClickableLabel(QLabel):
-    """QLabel qui ouvre le fichier dans l'app par defaut au clic."""
+    """QLabel qui ouvre le fichier dans l'app par defaut au clic.
+
+    Ultra-defensif : si l'ouverture echoue ou crash au niveau OS (shell
+    Windows en vrac, file lock, codec absent, etc.), on log et on affiche
+    une popup au lieu de laisser l'exception remonter dans Qt et tuer l'app.
+    """
 
     def __init__(self, path: Path, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -181,8 +186,46 @@ class _ClickableLabel(QLabel):
 
     def mousePressEvent(self, ev: QMouseEvent) -> None:  # noqa: N802
         if ev.button() == Qt.MouseButton.LeftButton:
-            QDesktopServices.openUrl(QUrl.fromLocalFile(str(self._path)))
-        super().mousePressEvent(ev)
+            self._safe_open()
+        try:
+            super().mousePressEvent(ev)
+        except Exception:  # noqa: BLE001
+            # On laisse pas une exception du parent Qt tuer l'app
+            pass
+
+    def _safe_open(self) -> None:
+        """Tente d'ouvrir le fichier sans jamais laisser une exception remonter."""
+        try:
+            if not self._path.exists():
+                # Fichier supprime entre-temps (envoye a la corbeille par ex)
+                from PyQt6.QtWidgets import QMessageBox
+                QMessageBox.warning(
+                    None, "Fichier introuvable",
+                    f"Le fichier n'existe plus :\n{self._path.name}\n\n"
+                    "Il a peut-etre ete deplace, renomme ou envoye a la corbeille."
+                )
+                return
+            ok = QDesktopServices.openUrl(QUrl.fromLocalFile(str(self._path)))
+            if not ok:
+                # Windows n'a pas pu ouvrir (pas d'app associee a l'extension, etc.)
+                from PyQt6.QtWidgets import QMessageBox
+                QMessageBox.information(
+                    None, "Impossible d'ouvrir",
+                    f"Windows n'a pas pu ouvrir ce fichier automatiquement :\n"
+                    f"{self._path.name}\n\n"
+                    f"Tu peux le verifier dans l'explorateur :\n{self._path.parent}"
+                )
+        except Exception as e:  # noqa: BLE001
+            # Log dans la console + popup, jamais de crash
+            print(f"[ClickableLabel] Erreur openUrl pour {self._path}: {e}")
+            try:
+                from PyQt6.QtWidgets import QMessageBox
+                QMessageBox.critical(
+                    None, "Erreur d'ouverture",
+                    f"Erreur en ouvrant le fichier :\n{self._path.name}\n\n{e}"
+                )
+            except Exception:  # noqa: BLE001
+                pass  # meme la popup a foire, on abandonne
 
 
 # ---------------------------------------------------------------------------

@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Literal, Optional
 
 GroupKind = Literal["exact", "quasi"]
-AssetKind = Literal["image", "pdf", "docx", "xlsx", "other"]
+AssetKind = Literal["image", "pdf", "docx", "xlsx", "video", "other"]
 
 
 @dataclass

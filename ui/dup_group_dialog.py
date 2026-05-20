@@ -150,9 +150,24 @@ class DupGroupContentsDialog(QDialog):
             except Exception:  # noqa: BLE001
                 thumb.setText("?")
         else:
-            thumb.setText({"pdf": "PDF", "docx": "DOC", "xlsx": "XLS"}.get(kind, "?"))
-        # Click on thumb = ouvre fichier
-        thumb.mousePressEvent = lambda _e, p=asset.path: QDesktopServices.openUrl(QUrl.fromLocalFile(str(p)))
+            # Icones pour les non-images. Video = badge violet specifique.
+            icons = {"pdf": "PDF", "docx": "DOC", "xlsx": "XLS", "video": "VIDEO"}
+            thumb.setText(icons.get(kind, "?"))
+            if kind == "video":
+                thumb.setStyleSheet(
+                    f"background: #7c3aed; color: white; border-radius: 4px; "
+                    f"font-size: 11px; font-weight: 800;"
+                )
+        # Click on thumb = ouvre fichier (defensif : pas de crash si Windows
+        # refuse d'ouvrir le format ou si le fichier a disparu entre-temps)
+        def _safe_open_click(_e, p=asset.path) -> None:
+            try:
+                if not p.exists():
+                    return
+                QDesktopServices.openUrl(QUrl.fromLocalFile(str(p)))
+            except Exception as ex:  # noqa: BLE001
+                print(f"[DupGroupContentsDialog] openUrl error: {ex}")
+        thumb.mousePressEvent = _safe_open_click
         thumb.setCursor(Qt.CursorShape.PointingHandCursor)
         thumb.setToolTip("Clique pour ouvrir le fichier")
         h.addWidget(thumb)
