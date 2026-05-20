@@ -896,6 +896,52 @@ class ClusterView(QWidget):
         if f:
             self._dest_root = Path(f)
             self.dest_input.setText(f)
+            # Met a jour les suggestions d'autocomplete avec les sous-dossiers
+            # existants dans cette racine (utile si l'user a deja un dossier
+            # 'Plage', 'Famille', etc. et veut y deposer des photos).
+            self._refresh_known_folders_with_dest()
+
+    def _scan_dest_subfolders(self) -> list[str]:
+        """Liste les sous-dossiers de 1er niveau de la racine de classement
+        (ou des sources si pas de racine explicite). Sert a alimenter
+        l'autocomplete avec les dossiers DEJA EXISTANTS.
+        """
+        roots: list[Path] = []
+        if self._dest_root is not None:
+            roots.append(self._dest_root)
+        else:
+            # Fallback : utilise les sources qui sont des dossiers
+            for s in self.sources:
+                if s.is_dir():
+                    roots.append(s)
+        names: set[str] = set()
+        for root in roots:
+            try:
+                for d in root.iterdir():
+                    if d.is_dir() and not d.name.startswith("."):
+                        names.add(d.name)
+            except OSError:
+                continue
+        return sorted(names)
+
+    def _refresh_known_folders_with_dest(self) -> None:
+        """Refresh la liste known_folders en ajoutant les sous-dossiers
+        existants de la racine de classement. Met a jour les cards visibles.
+        """
+        existing = self._scan_dest_subfolders()
+        if not existing:
+            return
+        before = set(self._known_folders_cache)
+        merged = sorted(before | set(existing))
+        if merged == self._known_folders_cache:
+            return
+        self._known_folders_cache = merged
+        # Update les cards deja visibles (si y en a)
+        for c in self.cards:
+            try:
+                c.update_known_folders(self._known_folders_cache)
+            except Exception:  # noqa: BLE001
+                pass
 
     # ==================================================================
     def _start_clustering(self) -> None:
@@ -1022,6 +1068,13 @@ class ClusterView(QWidget):
         if embeddings.embeddings_available():
             store = exemplars.ExemplarStore.get()
             known = sorted(set(known) | set(store.known_folders()))
+        # Ajoute aussi les sous-dossiers DEJA EXISTANTS dans la racine de
+        # classement (= si l'user a deja un dossier 'Plage' ou 'Famille',
+        # on le propose en autocomplete pour qu'il puisse y rajouter sans
+        # avoir a retaper le nom exact).
+        existing_dest = self._scan_dest_subfolders()
+        if existing_dest:
+            known = sorted(set(known) | set(existing_dest))
 
         self._pending_clusters = [c for c in clusters if c.size >= 1]
         self._rendered_count = 0
