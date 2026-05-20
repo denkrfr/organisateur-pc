@@ -150,6 +150,17 @@ STRINGS: dict[str, dict[str, str]] = {
                                  "en": "Grouping strictness:"},
     "sort.threshold_help":      {"fr": "Plus haut = groupes plus precis mais petits (et plus de singletons). Plus bas = groupes plus larges, regroupe les legeres variations visuelles. Defaut 0.78 = bon compromis pour des photos.",
                                  "en": "Higher = stricter, smaller and more precise groups (and more singletons). Lower = looser, groups visual variations together. Default 0.78 = good compromise for photos."},
+
+    # Selecteur de tri sur les resultats
+    "sort.sort_by":             {"fr": "Trier les resultats par :", "en": "Sort results by:"},
+    "sort.sort_default":        {"fr": "Taille du groupe (gros groupes d'abord)",
+                                 "en": "Group size (biggest groups first)"},
+    "sort.sort_images_first":   {"fr": "Images d'abord",
+                                 "en": "Images first"},
+    "sort.sort_videos_first":   {"fr": "Videos d'abord",
+                                 "en": "Videos first"},
+    "sort.sort_filesize":       {"fr": "Taille des fichiers (gros d'abord)",
+                                 "en": "File size (largest first)"},
     "sort.analyze":             {"fr": "Analyser et regrouper",
                                  "en": "Analyze and group"},
     "sort.empty":               {"fr": "Choisis un dossier en vrac et clique \"Analyser et regrouper\".",

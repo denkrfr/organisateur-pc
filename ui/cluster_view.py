@@ -21,7 +21,7 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QLineEdit,
     QCompleter, QFileDialog, QProgressBar, QMessageBox, QScrollArea, QFrame,
     QSizePolicy, QCheckBox, QListWidget, QListWidgetItem, QDialog, QDialogButtonBox,
-    QSlider,
+    QSlider, QComboBox,
 )
 from PyQt6.QtCore import QSize
 from PIL import Image as _PILImage
@@ -763,6 +763,25 @@ class ClusterView(QWidget):
         self.progress.setVisible(False)
         layout.addWidget(self.progress)
 
+        # Selecteur de tri sur les resultats : visible UNIQUEMENT quand y a
+        # des resultats a afficher (cluster cards rendues).
+        self.sort_row_widget = QWidget()
+        sort_row = QHBoxLayout(self.sort_row_widget)
+        sort_row.setContentsMargins(0, 0, 0, 0)
+        sort_lbl = QLabel(t("sort.sort_by"))
+        sort_lbl.setStyleSheet(f"color: {TEXT2}; font-size: 11px;")
+        sort_row.addWidget(sort_lbl)
+        self.sort_combo = QComboBox()
+        self.sort_combo.addItem(t("sort.sort_default"), "size_group")
+        self.sort_combo.addItem(t("sort.sort_images_first"), "images_first")
+        self.sort_combo.addItem(t("sort.sort_videos_first"), "videos_first")
+        self.sort_combo.addItem(t("sort.sort_filesize"), "filesize")
+        self.sort_combo.currentIndexChanged.connect(self._on_sort_changed)
+        sort_row.addWidget(self.sort_combo)
+        sort_row.addStretch()
+        self.sort_row_widget.setVisible(False)
+        layout.addWidget(self.sort_row_widget)
+
         # Container scrollable des clusters
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
@@ -1105,6 +1124,7 @@ class ClusterView(QWidget):
         if self._pending_clusters:
             self.back_btn.setVisible(True)
             self.move_all_btn.setVisible(True)
+            self.sort_row_widget.setVisible(True)
 
     def _back_to_setup(self) -> None:
         """Efface les groupes et revient a l'etat initial de selection."""
@@ -1123,6 +1143,7 @@ class ClusterView(QWidget):
         self.back_btn.setVisible(False)
         self.move_all_btn.setVisible(False)
         self.move_singletons_btn.setVisible(False)
+        self.sort_row_widget.setVisible(False)
 
     def _render_next_cluster_page(self) -> None:
         """Rend la prochaine page de clusters. Anti-OOM."""
@@ -1150,6 +1171,56 @@ class ClusterView(QWidget):
             self._container_layout.insertWidget(self._container_layout.count() - 1, self._more_btn_clusters)
         else:
             self._more_btn_clusters = None
+
+    # ==================================================================
+    # Tri des resultats (selector au-dessus des cards)
+    # ==================================================================
+    @staticmethod
+    def _cluster_first_kind(cluster) -> str:
+        """Retourne 'image', 'video' ou 'other' selon le 1er fichier du cluster."""
+        if not cluster.items:
+            return "other"
+        k = docs.kind_of(cluster.items[0])
+        if k == "image":
+            return "image"
+        if k == "video":
+            return "video"
+        return "other"
+
+    def _on_sort_changed(self, idx: int) -> None:
+        """Re-trie _pending_clusters selon la cle choisie, puis re-render."""
+        if not self._pending_clusters:
+            return
+        key = self.sort_combo.itemData(idx)
+        if key == "size_group":
+            self._pending_clusters.sort(key=lambda c: -c.size)
+        elif key == "images_first":
+            # Ordre : images d'abord, puis videos, puis autres. Secondaire = taille du groupe.
+            order = {"image": 0, "video": 1, "other": 2}
+            self._pending_clusters.sort(
+                key=lambda c: (order.get(self._cluster_first_kind(c), 2), -c.size)
+            )
+        elif key == "videos_first":
+            order = {"video": 0, "image": 1, "other": 2}
+            self._pending_clusters.sort(
+                key=lambda c: (order.get(self._cluster_first_kind(c), 2), -c.size)
+            )
+        elif key == "filesize":
+            # Taille totale du cluster (somme des fichiers) DESC
+            self._pending_clusters.sort(key=lambda c: -c.total_bytes)
+        else:
+            return  # cle inconnue, no-op
+
+        # Re-render : on clear les cards et on re-genere depuis _pending_clusters
+        self._clear_cards()
+        # Aussi retire le bouton 'Afficher plus' qui peut traîner
+        if hasattr(self, "_more_btn_clusters") and self._more_btn_clusters is not None:
+            self._container_layout.removeWidget(self._more_btn_clusters)
+            self._more_btn_clusters.deleteLater()
+            self._more_btn_clusters = None
+        self._rendered_count = 0
+        self._render_next_cluster_page()
+        self._update_footer()
 
     def _on_paths_ejected(self, paths: list) -> None:
         """Recoit les fichiers decoches d'un cluster via 'Voir/decocher'.
