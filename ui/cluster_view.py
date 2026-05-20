@@ -295,6 +295,7 @@ class ClusterCard(QFrame):
 
     move_requested = pyqtSignal(object, str)  # (Cluster, folder_name)
     recluster_loose_requested = pyqtSignal()  # bouton "Elargir" : re-cluster global
+    paths_ejected = pyqtSignal(list)  # list[Path] : fichiers decoches via 'Voir/decocher'
 
     def __init__(self, cluster: Cluster, index: int, known_folders: list[str], parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -445,16 +446,24 @@ class ClusterCard(QFrame):
     def _open_contents_dialog(self) -> None:
         """Ouvre la liste complete du cluster pour voir/decocher.
 
-        Pas de popup confus apres validation : on met juste a jour le compteur
-        de fichiers de la card silencieusement. L'user voit le nouveau total
-        et peut directement cliquer Deplacer.
+        Apres validation :
+        - Le cluster est modifie pour ne garder que les fichiers coches
+        - Les fichiers DECOCHES sont emis via paths_ejected -> la ClusterView
+          les transforme en singletons (l'user peut leur donner un autre nom
+          ou les mettre dans 'Autres') au lieu de les perdre.
         """
+        # Snapshot des items AVANT modification, pour calculer les ejectes
+        original = list(self.cluster.items)
+
         dlg = ClusterContentsDialog(self.cluster, self)
         if dlg.exec() == QDialog.DialogCode.Accepted:
             kept = dlg.kept_paths()
             if not kept:
                 QMessageBox.information(self, t("common.empty"), t("card.name_required"))
                 return
+            kept_set = set(kept)
+            ejected = [p for p in original if p not in kept_set]
+
             # Modifie le cluster sur place pour ne garder que les fichiers coches
             self.cluster.items = kept
             # Met a jour le compteur affiche sur la card
@@ -464,6 +473,10 @@ class ClusterCard(QFrame):
             # Met a jour le texte du bouton "Voir / decocher" aussi
             if hasattr(self, "_see_btn") and self._see_btn is not None:
                 self._see_btn.setText(t("card.see_files", n=len(kept)))
+
+            # Envoie les ejectes a la ClusterView -> nouveaux singletons
+            if ejected:
+                self.paths_ejected.emit(ejected)
 
     def _on_move_clicked(self) -> None:
         name = self.folder_input.text().strip()
@@ -1123,6 +1136,7 @@ class ClusterView(QWidget):
             card = ClusterCard(c, index=i + 1, known_folders=self._known_folders_cache)
             card.move_requested.connect(self._on_move_requested)
             card.recluster_loose_requested.connect(self._recluster_loose)
+            card.paths_ejected.connect(self._on_paths_ejected)
             self.cards.append(card)
             self._container_layout.insertWidget(self._container_layout.count() - 1, card)
         self._rendered_count = end
@@ -1136,6 +1150,47 @@ class ClusterView(QWidget):
             self._container_layout.insertWidget(self._container_layout.count() - 1, self._more_btn_clusters)
         else:
             self._more_btn_clusters = None
+
+    def _on_paths_ejected(self, paths: list) -> None:
+        """Recoit les fichiers decoches d'un cluster via 'Voir/decocher'.
+        Les transforme en nouveaux singletons (un cluster d'1 fichier chacun)
+        ajoutes a la fin de la liste, pour que l'user puisse les traiter
+        separement (renommer, ignorer, mettre dans 'Autres', etc.) au lieu
+        de les perdre.
+        """
+        if not paths:
+            return
+        # Crée un Cluster singleton pour chaque path ejecte
+        for p in paths:
+            try:
+                if not isinstance(p, Path):
+                    p = Path(p)
+            except Exception:  # noqa: BLE001
+                continue
+            kind = "image" if docs.kind_of(p) == "image" else "other"
+            new_cluster = Cluster(items=[p], kind=kind)
+            # Ajoute au pending pour que le footer / move_all en tienne compte
+            self._pending_clusters.append(new_cluster)
+            # Cree la card immediatement (a la fin du layout)
+            idx = self._rendered_count + 1
+            card = ClusterCard(new_cluster, index=idx, known_folders=self._known_folders_cache, parent=self)
+            card.move_requested.connect(self._on_move_requested)
+            card.recluster_loose_requested.connect(self._recluster_loose)
+            card.paths_ejected.connect(self._on_paths_ejected)
+            self.cards.append(card)
+            # Insere avant le stretch / bouton 'Afficher plus' eventuel
+            insert_idx = self._container_layout.count() - 1
+            if hasattr(self, "_more_btn_clusters") and self._more_btn_clusters is not None:
+                # Insere juste avant le bouton 'plus'
+                for k in range(self._container_layout.count()):
+                    item = self._container_layout.itemAt(k)
+                    if item and item.widget() is self._more_btn_clusters:
+                        insert_idx = k
+                        break
+            self._container_layout.insertWidget(insert_idx, card)
+            self._rendered_count += 1
+        # Footer / boutons "tous" se mettent a jour
+        self._update_footer()
 
     def _on_clustering_failed(self, msg: str) -> None:
         self.progress.setVisible(False)
