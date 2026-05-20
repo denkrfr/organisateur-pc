@@ -728,8 +728,8 @@ class DupGroupRow(QFrame):
             thumbs_row = QHBoxLayout()
             thumbs_row.setSpacing(4)
             for i, asset in enumerate(group.items[:2]):
-                t = make_mini_thumbnail(asset.path)
-                thumbs_row.addWidget(t)
+                thumb_widget = make_mini_thumbnail(asset.path)
+                thumbs_row.addWidget(thumb_widget)
             main_row.addLayout(thumbs_row)
 
         # Liste verticale des fichiers
