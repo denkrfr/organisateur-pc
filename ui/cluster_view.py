@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Optional
 
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QObject, QSize, QUrl
-from PyQt6.QtGui import QDesktopServices
+from PyQt6.QtGui import QDesktopServices, QDragEnterEvent, QDropEvent
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QLineEdit,
     QCompleter, QFileDialog, QProgressBar, QMessageBox, QScrollArea, QFrame,
@@ -567,6 +567,59 @@ class ClusterView(QWidget):
         self._last_clustered_paths: list[Path] = []
         self._last_used_threshold: float = 0.88
         self._build_ui()
+        # Drag-and-drop natif depuis l'Explorateur Windows : plus fiable que
+        # le file picker (qui peut tronquer silencieusement les selections
+        # multiples). L'user glisse ses fichiers/dossiers et tout passe.
+        self.setAcceptDrops(True)
+
+    # ==================================================================
+    # Drag-and-drop natif (l'user glisse depuis l'Explorateur)
+    # ==================================================================
+    def dragEnterEvent(self, event: QDragEnterEvent) -> None:  # noqa: N802
+        # Accepte tout drag qui contient des URLs de fichiers locaux
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+
+    def dragMoveEvent(self, event) -> None:  # noqa: N802
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+
+    def dropEvent(self, event: QDropEvent) -> None:  # noqa: N802
+        """Ajoute a self.sources tous les fichiers/dossiers droppes."""
+        urls = event.mimeData().urls()
+        if not urls:
+            return
+        n_added_files = 0
+        n_added_dirs = 0
+        n_already = 0
+        for url in urls:
+            if not url.isLocalFile():
+                continue
+            try:
+                p = Path(url.toLocalFile())
+            except Exception:  # noqa: BLE001
+                continue
+            if p in self.sources:
+                n_already += 1
+                continue
+            self.sources.append(p)
+            if p.is_file():
+                QListWidgetItem(f"[fichier] {p.name}    -    {p.parent}", self.sources_list)
+                n_added_files += 1
+            elif p.is_dir():
+                QListWidgetItem(f"[dossier] {p}", self.sources_list)
+                n_added_dirs += 1
+        event.acceptProposedAction()
+        # Feedback discret dans le footer (pas de popup intrusive)
+        if n_added_files or n_added_dirs:
+            parts = []
+            if n_added_files:
+                parts.append(f"{n_added_files} fichier(s)")
+            if n_added_dirs:
+                parts.append(f"{n_added_dirs} dossier(s)")
+            if n_already:
+                parts.append(f"{n_already} deja present(s)")
+            self.progress_label.setText("Ajoute : " + " + ".join(parts))
 
     def _build_ui(self) -> None:
         layout = QVBoxLayout(self)
@@ -602,19 +655,9 @@ class ClusterView(QWidget):
         src_box.addWidget(self.sources_list, stretch=1)
         src_btns = QVBoxLayout()
         add_files_btn = QPushButton(t("sort.add_files"))
-        add_files_btn.setToolTip(
-            "Selectionne manuellement des fichiers specifiques.\n"
-            "ATTENTION : Windows limite la selection multiple a ~100-200 fichiers.\n"
-            "Pour les gros volumes, utilise plutot 'Ajouter dossier'."
-        )
         add_files_btn.clicked.connect(self._add_files)
         src_btns.addWidget(add_files_btn)
         add_dir_btn = QPushButton(t("sort.add_dir"))
-        add_dir_btn.setToolTip(
-            "Ajoute un dossier entier. Tous les fichiers supportes (images, "
-            "videos, PDF/Word/Excel) seront aspires.\n"
-            "Recommande pour gros volumes — pas de limite Windows."
-        )
         add_dir_btn.clicked.connect(self._add_dir)
         src_btns.addWidget(add_dir_btn)
         rm_btn = QPushButton(t("sort.remove"))
