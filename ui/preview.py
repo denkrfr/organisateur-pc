@@ -38,6 +38,8 @@ _QT_NATIVE_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".gif"}
 # planter sur certains fichiers ; on prefere afficher pas-de-vignette plutot
 # qu'un crash).
 _THUMB_SKIP_EXTS = {".heic", ".heif"}
+# Extensions video : on delegue a core.video_thumb (ffmpeg)
+_VIDEO_EXTS = {".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v", ".3gp", ".wmv", ".flv"}
 
 
 def load_thumbnail(path: Path, max_size: tuple[int, int] = (1024, 1024)) -> Optional[QPixmap]:
@@ -46,23 +48,50 @@ def load_thumbnail(path: Path, max_size: tuple[int, int] = (1024, 1024)) -> Opti
     Strategie :
       1. Verifie la taille du fichier ; au-dela de 25 Mo, on skip (risque OOM
          et le rendu serait scale a 96x96 de toute facon).
-      2. Pour les formats natifs Qt (jpg/png/bmp/gif), utilise QImageReader
+      2. Videos (.mp4, .mov, ...) -> delegue a video_thumb (ffmpeg) qui extrait
+         une frame en cache disque.
+      3. Pour les formats natifs Qt (jpg/png/bmp/gif), utilise QImageReader
          qui est plus stable que Pillow + ImageQt (moins de risques de
          segfault au niveau C).
-      3. Fallback Pillow pour les formats moins courants (webp, tiff).
-      4. HEIC : skip pur et simple (pas de codec stable embarque).
-      5. Toute exception (y compris MemoryError) -> None, pas de crash.
+      4. Fallback Pillow pour les formats moins courants (webp, tiff).
+      5. HEIC : skip pur et simple (pas de codec stable embarque).
+      6. Toute exception (y compris MemoryError) -> None, pas de crash.
 
     max_size sert de plafond pour ne pas exploser la RAM.
     """
-    # Filtre 1 : taille du fichier
+    suffix = path.suffix.lower()
+
+    # Cas video : on extrait via ffmpeg (cache disque), puis on rend
+    # l'image generee comme une image classique. Si l'extraction echoue,
+    # on retourne None et l'UI affichera son fallback badge VIDEO.
+    if suffix in _VIDEO_EXTS:
+        try:
+            from core.video_thumb import get_video_thumbnail
+            thumb_path = get_video_thumbnail(path, size=max(max_size))
+            if thumb_path is None:
+                return None
+            # Charge le JPG genere comme une image native Qt
+            try:
+                from PyQt6.QtCore import QSize
+                from PyQt6.QtGui import QImageReader
+                reader = QImageReader(str(thumb_path))
+                reader.setScaledSize(QSize(max_size[0], max_size[1]))
+                img = reader.read()
+                if not img.isNull():
+                    return QPixmap.fromImage(img)
+            except Exception:  # noqa: BLE001
+                pass
+        except Exception:  # noqa: BLE001
+            pass
+        return None
+
+    # Filtre 1 : taille du fichier (uniquement pour les images, pas les videos
+    # qui peuvent etre tres grosses mais qu'on ne lit pas en entier)
     try:
         if path.stat().st_size > _THUMB_MAX_FILE_SIZE_BYTES:
             return None
     except OSError:
         return None
-
-    suffix = path.suffix.lower()
 
     # Filtre 2 : extensions a ne pas tenter
     if suffix in _THUMB_SKIP_EXTS:

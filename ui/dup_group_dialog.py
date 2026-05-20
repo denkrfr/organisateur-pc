@@ -131,7 +131,10 @@ class DupGroupContentsDialog(QDialog):
         )
         thumb.setAlignment(Qt.AlignmentFlag.AlignCenter)
         kind = docs.kind_of(asset.path)
-        if kind == "image":
+        # Images ET videos : on tente la preview via load_thumbnail (qui delegue
+        # a ffmpeg pour les videos)
+        thumb_set = False
+        if kind in ("image", "video"):
             try:
                 pm = load_thumbnail(asset.path, max_size=(128, 128))
                 if pm is not None:
@@ -140,10 +143,11 @@ class DupGroupContentsDialog(QDialog):
                         Qt.TransformationMode.SmoothTransformation,
                     )
                     thumb.setPixmap(scaled)
+                    thumb_set = True
             except Exception:  # noqa: BLE001
-                thumb.setText("?")
-        else:
-            # Icones pour les non-images. Video = badge violet specifique.
+                pass
+        if not thumb_set:
+            # Icones pour les non-images / fallback video. Badge violet si video.
             icons = {"pdf": "PDF", "docx": "DOC", "xlsx": "XLS", "video": "VIDEO"}
             thumb.setText(icons.get(kind, "?"))
             if kind == "video":

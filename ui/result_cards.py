@@ -137,7 +137,10 @@ class ThumbnailCard(QFrame):
     # ------------------------------------------------------------------
     def _render_thumb(self) -> None:
         kind = docs.kind_of(self.asset.path)
-        if kind == "image":
+        # Images ET videos : on tente la preview. load_thumbnail delegue
+        # automatiquement aux extracteurs corrects (Qt/Pillow pour images,
+        # ffmpeg pour videos).
+        if kind in ("image", "video"):
             pm = load_thumbnail(self.asset.path, max_size=(THUMB_W * 2, THUMB_H * 2))
             if pm is not None:
                 scaled = pm.scaled(
@@ -147,7 +150,8 @@ class ThumbnailCard(QFrame):
                 )
                 self.thumb.setPixmap(scaled)
                 return
-        # Fallback : icone + label de type pour les docs / videos
+        # Fallback : icone + label de type pour les docs (et videos si ffmpeg
+        # n'a pas pu extraire la frame)
         icons = {"pdf": "PDF", "docx": "DOC", "xlsx": "XLS", "video": "VIDEO", "other": "FILE"}
         label = icons.get(kind, "?")
         self.thumb.setText(label)
@@ -473,7 +477,8 @@ class SortFileCard(QFrame):
 
     def _render_thumb(self) -> None:
         kind = docs.kind_of(self.path)
-        if kind == "image":
+        # Images ET videos : on tente la preview
+        if kind in ("image", "video"):
             pm = load_thumbnail(self.path, max_size=(THUMB_W * 2, THUMB_H * 2))
             if pm is not None:
                 scaled = pm.scaled(
@@ -615,12 +620,15 @@ ROW_THUMB_SIZE = 64
 
 
 def make_mini_thumbnail(path: Path, size: int = ROW_THUMB_SIZE) -> QLabel:
-    """Mini thumbnail (carre) pour les vues en ligne. Image OU icone de doc."""
+    """Mini thumbnail (carre) pour les vues en ligne. Image / video / icone de doc."""
     lbl = _ClickableLabel(path)
     lbl.setFixedSize(size, size)
     lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
     kind = docs.kind_of(path)
-    if kind == "image":
+    # Images : direct via load_thumbnail
+    # Videos : load_thumbnail delegue a video_thumb (ffmpeg) qui retourne
+    # une frame extraite. Si echec -> fallback badge plus bas.
+    if kind in ("image", "video"):
         pm = load_thumbnail(path, max_size=(size * 2, size * 2))
         if pm is not None:
             scaled = pm.scaled(
@@ -633,7 +641,7 @@ def make_mini_thumbnail(path: Path, size: int = ROW_THUMB_SIZE) -> QLabel:
                 f"background: {CARD2}; border: 1px solid {BORDER}; border-radius: 4px;"
             )
             return lbl
-    # Doc placeholder
+    # Doc placeholder (et fallback video si ffmpeg pas dispo / a echoue)
     if kind in _DOC_COLORS:
         color, label = _DOC_COLORS[kind]
         lbl.setText(label)

@@ -17,6 +17,7 @@ venv/
 
 # PyInstaller
 *.spec
+!Organisateur.spec
 build/
 dist/
 dist_installer/
