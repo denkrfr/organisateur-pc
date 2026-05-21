@@ -1090,7 +1090,7 @@ class ClusterView(QWidget):
     def _on_progress(self, c: int, total: int, label: str) -> None:
         if self.progress.maximum() != total:
             self.progress.setRange(0, max(1, total))
-        self.progress.setValue(min(c, t))
+        self.progress.setValue(min(c, total))
         self.progress_label.setText(label)
 
     PAGE_SIZE = 30  # Anti-crash : limite le nb de cartes rendues en RAM
