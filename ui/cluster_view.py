@@ -648,7 +648,8 @@ class ClusterView(QWidget):
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(10)
 
-        # Ligne titre + bouton Retour (visible uniquement quand resultats affiches)
+        # Ligne titre + bouton Retour + bouton Maximiser (visible uniquement
+        # quand resultats affiches)
         title_row = QHBoxLayout()
         self.back_btn = QPushButton(t("common.back"))
         self.back_btn.setProperty("role", "secondary")
@@ -660,17 +661,33 @@ class ClusterView(QWidget):
         title.setStyleSheet(f"color: {TEXT}; font-size: 22px; font-weight: 800;")
         title_row.addWidget(title)
         title_row.addStretch()
+        # Bouton Maximiser : ouvre les resultats dans une fenetre separee plein
+        # ecran. Utile sur petits ecrans pour avoir plus de place vertical.
+        self.maximize_btn = QPushButton(t("sort.maximize"))
+        self.maximize_btn.setProperty("role", "secondary")
+        self.maximize_btn.setToolTip(t("sort.maximize_tip"))
+        self.maximize_btn.clicked.connect(self._maximize_results)
+        self.maximize_btn.setVisible(False)
+        title_row.addWidget(self.maximize_btn)
         layout.addLayout(title_row)
+
+        # Subtitle + tout le setup (sources, dest, options, slider, analyze)
+        # wrappes dans un container qu'on peut HIDE quand les resultats
+        # sont affiches -> liberation de place pour les groupes.
+        self._setup_container = QWidget()
+        setup_layout = QVBoxLayout(self._setup_container)
+        setup_layout.setContentsMargins(0, 0, 0, 0)
+        setup_layout.setSpacing(10)
 
         subtitle = QLabel(t("sort.subtitle"))
         subtitle.setStyleSheet(f"color: {TEXT2}; font-size: 11px;")
         subtitle.setWordWrap(True)
-        layout.addWidget(subtitle)
+        setup_layout.addWidget(subtitle)
 
         # Liste des sources : fichiers ou dossiers ajoutes par l'user
         src_lbl = QLabel(t("sort.sources_label"))
         src_lbl.setStyleSheet(f"color: {TEXT}; font-weight: 600;")
-        layout.addWidget(src_lbl)
+        setup_layout.addWidget(src_lbl)
         src_box = QHBoxLayout()
         self.sources_list = QListWidget()
         self.sources_list.setMaximumHeight(120)
@@ -693,7 +710,7 @@ class ClusterView(QWidget):
         src_btns.addWidget(clear_btn)
         src_btns.addStretch()
         src_box.addLayout(src_btns)
-        layout.addLayout(src_box)
+        setup_layout.addLayout(src_box)
 
         # Racine de classement
         dest_row = QHBoxLayout()
@@ -713,7 +730,7 @@ class ClusterView(QWidget):
         choose_dest.setProperty("role", "secondary")
         choose_dest.clicked.connect(self._choose_dest)
         dest_row.addWidget(choose_dest)
-        layout.addLayout(dest_row)
+        setup_layout.addLayout(dest_row)
 
         # Options
         opt_row = QHBoxLayout()
@@ -724,7 +741,7 @@ class ClusterView(QWidget):
         self.filters_cb.setChecked(False)
         opt_row.addWidget(self.filters_cb)
         opt_row.addStretch()
-        layout.addLayout(opt_row)
+        setup_layout.addLayout(opt_row)
 
         # Seuil de similarite (slider)
         sim_row = QHBoxLayout()
@@ -734,10 +751,6 @@ class ClusterView(QWidget):
         self.sim_slider = QSlider(Qt.Orientation.Horizontal)
         self.sim_slider.setMinimum(70)   # 0.70 = tres permissif (gros groupes)
         self.sim_slider.setMaximum(95)   # 0.95 = tres strict (petits groupes precis)
-        # Defaut : 0.78. Test sur photos similaires (KakaoTalk multi-envois) montre
-        # qu'a 0.88 on rate 70% des paires reellement similaires (la mediane de
-        # similarite est ~0.85). 0.78 capture 70% des vraies similarites avec
-        # ZERO faux-positif sur le cross-set teste.
         self.sim_slider.setValue(78)
         self.sim_slider.setFixedWidth(220)
         self.sim_slider.valueChanged.connect(self._update_sim_label)
@@ -747,22 +760,24 @@ class ClusterView(QWidget):
         self.sim_value_lbl.setFixedWidth(110)
         sim_row.addWidget(self.sim_value_lbl)
         sim_row.addStretch()
-        layout.addLayout(sim_row)
+        setup_layout.addLayout(sim_row)
 
-        # Petit help text discret sous le slider (l'user n'a pas besoin de
-        # comprendre 'cosinus', juste l'effet pratique du curseur)
+        # Petit help text discret sous le slider
         sim_help = QLabel(t("sort.threshold_help"))
         sim_help.setStyleSheet(f"color: {TEXT3}; font-size: 10px; font-style: italic;")
         sim_help.setWordWrap(True)
-        layout.addWidget(sim_help)
+        setup_layout.addWidget(sim_help)
 
-        # Actions
+        # Actions (bouton Analyser)
         actions = QHBoxLayout()
         actions.addStretch()
         self.analyze_btn = QPushButton(t("sort.analyze"))
         self.analyze_btn.clicked.connect(self._start_clustering)
         actions.addWidget(self.analyze_btn)
-        layout.addLayout(actions)
+        setup_layout.addLayout(actions)
+
+        # Le container setup va dans le layout principal
+        layout.addWidget(self._setup_container)
 
         # Progress
         self.progress_label = QLabel("")
@@ -943,20 +958,45 @@ class ClusterView(QWidget):
             self._refresh_known_folders_with_dest()
 
     def _scan_dest_subfolders(self) -> list[str]:
-        """Liste les sous-dossiers de 1er niveau de la racine de classement
-        (ou des sources si pas de racine explicite). Sert a alimenter
-        l'autocomplete avec les dossiers DEJA EXISTANTS.
+        """Liste les sous-dossiers de 1er niveau a proposer en autocomplete.
+
+        Strategie :
+          - Si une racine de classement est definie : scanne dedans
+          - Toujours scanner aussi les sources : dossier directement si la
+            source EST un dossier, sinon le PARENT si la source est un fichier
+            (l'user a fait 'Ajouter fichiers...' depuis un certain dossier)
+          - Dedup les roots qui pointent vers le meme endroit
+
+        Comme ca quand l'user pick 3 photos dans Desktop puis Analyser,
+        tous les dossiers du Desktop sont proposes en autocomplete.
         """
         roots: list[Path] = []
         if self._dest_root is not None:
             roots.append(self._dest_root)
-        else:
-            # Fallback : utilise les sources qui sont des dossiers
-            for s in self.sources:
+        # Toujours ajouter sources et/ou leurs parents
+        for s in self.sources:
+            try:
                 if s.is_dir():
                     roots.append(s)
+                elif s.is_file():
+                    # Fichier source : on scanne son dossier parent
+                    roots.append(s.parent)
+            except OSError:
+                continue
+        # Dedup : plusieurs sources peuvent avoir le meme parent
+        seen: set[Path] = set()
+        unique_roots: list[Path] = []
+        for r in roots:
+            try:
+                rp = r.resolve()
+                if rp not in seen:
+                    seen.add(rp)
+                    unique_roots.append(r)
+            except OSError:
+                continue
+        # Collecte les sous-dossiers
         names: set[str] = set()
-        for root in roots:
+        for root in unique_roots:
             try:
                 for d in root.iterdir():
                     if d.is_dir() and not d.name.startswith("."):
@@ -1134,6 +1174,10 @@ class ClusterView(QWidget):
             self.back_btn.setVisible(True)
             self.move_all_btn.setVisible(True)
             self.sort_row_widget.setVisible(True)
+            # Le bouton 'Maximiser' apparait aussi : permet d'ouvrir les
+            # resultats dans une grande fenetre separee (utile sur petits ecrans)
+            if hasattr(self, "maximize_btn") and self.maximize_btn is not None:
+                self.maximize_btn.setVisible(True)
 
     def _back_to_setup(self) -> None:
         """Efface les groupes et revient a l'etat initial de selection."""
@@ -1153,6 +1197,8 @@ class ClusterView(QWidget):
         self.move_all_btn.setVisible(False)
         self.move_singletons_btn.setVisible(False)
         self.sort_row_widget.setVisible(False)
+        if hasattr(self, "maximize_btn") and self.maximize_btn is not None:
+            self.maximize_btn.setVisible(False)
 
     def _render_next_cluster_page(self) -> None:
         """Rend la prochaine page de clusters. Anti-OOM."""
@@ -1180,6 +1226,71 @@ class ClusterView(QWidget):
             self._container_layout.insertWidget(self._container_layout.count() - 1, self._more_btn_clusters)
         else:
             self._more_btn_clusters = None
+
+    # ==================================================================
+    # Maximiser dans une fenetre separee (utile sur petits ecrans)
+    # ==================================================================
+    def _maximize_results(self) -> None:
+        """Deplace temporairement le QScrollArea des resultats dans une
+        QDialog plein ecran. Quand l'user ferme le dialog, le scroll
+        revient a sa place dans la fenetre principale.
+
+        Ca evite de creer des duplicats : il y a UN SEUL set de cards,
+        partage entre les 2 vues. L'etat (folder_input rempli, etc.) est
+        preserve nativement.
+        """
+        if getattr(self, "_max_dialog", None) is not None:
+            return  # deja maximise
+
+        # Sauve la position du scroll dans le layout main pour pouvoir le
+        # remettre au meme endroit au close
+        main_layout = self.layout()
+        scroll_index = main_layout.indexOf(self.scroll)
+        self._scroll_original_index = scroll_index
+
+        # Cree le dialog plein ecran
+        self._max_dialog = QDialog(self.window())
+        self._max_dialog.setWindowTitle(t("sort.maximized_title"))
+        self._max_dialog.setMinimumSize(900, 600)
+        dlg_layout = QVBoxLayout(self._max_dialog)
+        dlg_layout.setContentsMargins(8, 8, 8, 8)
+        dlg_layout.setSpacing(8)
+
+        # Re-parente le scroll area de la main view vers le dialog
+        main_layout.removeWidget(self.scroll)
+        dlg_layout.addWidget(self.scroll, stretch=1)
+
+        # Footer du dialog : bouton 'Fermer'
+        footer_row = QHBoxLayout()
+        footer_row.addStretch()
+        close_btn = QPushButton(t("sort.maximize_close"))
+        close_btn.clicked.connect(self._max_dialog.accept)
+        footer_row.addWidget(close_btn)
+        dlg_layout.addLayout(footer_row)
+
+        # Quand le dialog se ferme : on remet le scroll dans la main view
+        self._max_dialog.finished.connect(self._on_max_dialog_closed)
+        self._max_dialog.showMaximized()
+
+    def _on_max_dialog_closed(self) -> None:
+        """Apres fermeture du dialog plein ecran : remet le scroll dans la
+        fenetre principale, a sa position d'origine."""
+        if self._max_dialog is None:
+            return
+        # Retire le scroll du dialog
+        dlg_layout = self._max_dialog.layout()
+        if dlg_layout is not None:
+            dlg_layout.removeWidget(self.scroll)
+        # Reinjecte dans la main view au bon index
+        main_layout = self.layout()
+        idx = getattr(self, "_scroll_original_index", -1)
+        if idx < 0 or idx > main_layout.count():
+            # Fallback : insertion juste avant la bottom bar
+            idx = max(0, main_layout.count() - 2)
+        main_layout.insertWidget(idx, self.scroll, stretch=1)
+        # Cleanup
+        self._max_dialog.deleteLater()
+        self._max_dialog = None
 
     # ==================================================================
     # Tri des resultats (selector au-dessus des cards)

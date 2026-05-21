@@ -150,6 +150,14 @@ STRINGS: dict[str, dict[str, str]] = {
                                  "en": "Grouping strictness:"},
     "sort.threshold_help":      {"fr": "Plus haut = groupes plus precis mais petits (et plus de singletons). Plus bas = groupes plus larges, regroupe les legeres variations visuelles. Defaut 0.78 = bon compromis pour des photos.",
                                  "en": "Higher = stricter, smaller and more precise groups (and more singletons). Lower = looser, groups visual variations together. Default 0.78 = good compromise for photos."},
+    "sort.maximize":            {"fr": "🔍 Maximiser",
+                                 "en": "🔍 Maximize"},
+    "sort.maximize_tip":        {"fr": "Ouvre les resultats dans une grande fenetre separee. Utile sur petits ecrans.",
+                                 "en": "Opens the results in a large separate window. Useful on small screens."},
+    "sort.maximized_title":     {"fr": "Resultats du tri (mode plein ecran)",
+                                 "en": "Sort results (full screen mode)"},
+    "sort.maximize_close":      {"fr": "Fermer (revenir a la fenetre principale)",
+                                 "en": "Close (back to main window)"},
 
     # Selecteur de tri sur les resultats
     "sort.sort_by":             {"fr": "Trier les resultats par :", "en": "Sort results by:"},
